@@ -58,14 +58,17 @@
 
 <script setup>
 import { ref, onMounted, h, watch, computed, reactive } from 'vue';
-
+import axios from 'axios';
 import { NDataTable, NIcon, NButton, NDatePicker, NRate, NModal } from 'naive-ui';
-import { getUsers, createUserKeycloak, deleteUserKeycloak, fetchAlumnos } from '@/services/UserService';
+import { getUsers, createUserKeycloak, deleteUserKeycloak } from '@/services/UserService';
 import { PersonAddSharp as AddUserIcon, 
         CloseCircleOutline as DeleteUserIcon, 
         CreateOutline as EditUserIcon,
         EyeOutline as ViewIcon 
       } from '@vicons/ionicons5';
+import { fetchAlumnos } from '@/services/MinioService';
+
+import { useUserDataStore } from '@/stores/keycloakUserData'
 import AddUserModal from '@/components/AddUserModal.vue'
 import EditUserModal from '@/components/EditUserModal.vue'
 import DeleteUserModal from '@/components/DeleteUserModal.vue';
@@ -73,7 +76,7 @@ import { useRouter } from 'vue-router';
 const router = useRouter();
 const showViewModal = ref(false);
 const viewTiendaUrl = ref('');
-
+const userStore = useUserDataStore()
 const data = ref([]);
 const loading = ref(true)
 const checkedRowKeysRef = ref([]);
@@ -83,6 +86,7 @@ const showDeleteModal = ref(false);
 const showEditModal = ref(false)
 const userToDelete = ref([]);
 const userToEdit = ref(null);
+const uploadedFiles = ref([])
 
 const paginationOptions = reactive({
   page: 1,
@@ -101,13 +105,140 @@ const paginationOptions = reactive({
   }
 });
 
+const normalizeBucketName = (name) => {
+  return name
+    .toLowerCase()
+    .replace(/[,]/g, '-')
+};
+
+const createBucket = async (bucketName) => {
+  try {
+    console.log("el bucket en create es: ", bucketName)
+    //userStore.setBucketName(bucketName)
+    await axios.post('http://localhost:3000/create-bucket', 
+      { bucketName: bucketName },
+      {
+        headers: {
+          Authorization: `Bearer ${userStore.token}`
+        }
+      }
+    );
+    console.log("Bucket creado o ya existía:", bucketName);
+  } catch (error) {
+    console.error("Error al crear bucket:", error.response?.data || error.message);
+  }
+};
+
+const createBucketsForUsers = async (usuarios) => {
+  for (const user of usuarios) {
+    const apellidos = user.lastName.replace(/\s+/g, '');
+    const nombre = user.firstName.trim();
+    const bucketName = normalizeBucketName(`${apellidos},${nombre}`);
+    console.log("EL bucket del user es: ", bucketName)
+    await createBucket(bucketName);
+  }
+};
+
+// onMounted(async () => {
+//   console.log('isAdmin:', props.isAdmin);
+
+//   if (props.isAdmin) {
+//     try {
+//       loading.value = true;
+
+//       const usuarios = await getUsers();
+//       console.log("Users keycloak: ", usuarios)
+//       const bucketName = generateBucketName(usuarios)
+//       const normBucketName = normalizeBucketName(bucketName)
+//       if (bucketName) {
+//         userStore.setBucketName(normBucketName)
+//         console.log("ALIIIIIIIIIIII el bucket es: ", normBucketName)
+//         await createBucket(normBucketName);
+//       }
+//       const usuariosTransformados = Array.isArray(usuarios)
+//         ? usuarios.map(user => ({
+//             firstName: user.firstName,
+//             lastName: user.lastName,
+//             email: user.email,
+//             id: user.id,
+//             username: user.username,
+//             rol: getRol(user),
+//             añoAcademico: getActualYear(),
+//             archivoSubido: user.archivoSubido 
+//           }))
+//         : [];
+
+//       // Paso 2: obtener alumnos de MinIO
+//       let alumnos = [];
+
+//       try {
+//         // Esto lanza un error 404 si no hay archivo
+//         const result = await fetchAlumnos();
+//         alumnos = result;
+//       } catch (err) {
+//         if (err.response && err.response.status === 404) {
+//           console.warn('No hay archivo de alumnos en MinIO aún.');
+//         } else if (err.response && err.response.status === 500) {
+//           error.value = 'Error del servidor al intentar leer los alumnos.';
+//         } else {
+//           error.value = 'Error inesperado.';
+//         }
+//       }
+
+//       // Paso 3: crear en Keycloak si no existen
+//       for (const alumno of alumnos) {
+//         const yaExiste = usuariosTransformados.some(
+//           u => u.username === alumno.username || u.email === alumno.email
+//         );
+
+//         if (!yaExiste) {
+//           try {
+//             await createUserKeycloak({
+//               firstName: alumno.firstName,
+//               lastName: alumno.lastName,
+//               email: alumno.email,
+//               username: alumno.username,
+//               password: '12345678',
+//               rol: alumno.rol
+//             });
+//             console.log(`Usuario ${alumno.username} creado en Keycloak`);
+//           } catch (error) {
+//             console.error(`Error al crear ${alumno.username}:`, error);
+//           }
+//         }
+//       }
+
+//       // Paso 4: refrescar usuarios tras crear nuevos
+//       const updatedUsers = await getUsers();
+//       const updatedUsuariosTransformados = Array.isArray(updatedUsers)
+//         ? updatedUsers.map(user => ({
+//             firstName: user.firstName,
+//             lastName: user.lastName,
+//             email: user.email,
+//             id: user.id,
+//             username: user.username,
+//             rol: getRol(user),
+//             añoAcademico: getActualYear()
+//           }))
+//         : [];
+      
+//       data.value = await fetchUploadedFilesPorUsuario(updatedUsuariosTransformados);
+//     } catch (error) {
+//       console.error('Error al obtener usuarios o alumnos:', error);
+//     } finally {
+//       loading.value = false;
+//     }
+//   }
+// });
+
 onMounted(async () => {
-  console.log('isAdmin:', props.isAdmin);
   if (props.isAdmin) {
     try {
       loading.value = true;
 
+      // Paso 1: obtener usuarios y transformar
       const usuarios = await getUsers();
+
       const usuariosTransformados = Array.isArray(usuarios)
         ? usuarios.map(user => ({
             firstName: user.firstName,
@@ -116,73 +247,96 @@ onMounted(async () => {
             id: user.id,
             username: user.username,
             rol: getRol(user),
-            añoAcademico: getActualYear()
+            añoAcademico: getActualYear(),
+            archivoSubido: false
           }))
         : [];
 
-      // Paso 2: obtener alumnos de MinIO
-      const alumnos = await fetchAlumnos();
+      // Paso 2: crear buckets para todos
+      await createBucketsForUsers(usuariosTransformados);
 
-      // Paso 3: crear en Keycloak si no existen
-      for (const alumno of alumnos) {
-        const yaExiste = usuariosTransformados.some(
-          u => u.username === alumno.username || u.email === alumno.email
-        );
+      // Paso 3: actualizar el flag archivoSubido sólo para usuario actual
+      const usuariosConArchivoActualizado = await fetchArchivoSubidoUsuarioActual(usuariosTransformados);
 
-        if (!yaExiste) {
-          try {
-            await createUserKeycloak({
-              firstName: alumno.firstName,
-              lastName: alumno.lastName,
-              email: alumno.email,
-              username: alumno.username,
-              password: '12345678',
-              rol: alumno.rol
-            });
-            console.log(`Usuario ${alumno.username} creado en Keycloak`);
-          } catch (error) {
-            console.error(`Error al crear ${alumno.username}:`, error);
-          }
-        }
-      }
-
-      // Paso 4: refrescar usuarios tras crear nuevos
-      const updatedUsers = await getUsers();
-      const updatedUsuariosTransformados = Array.isArray(updatedUsers)
-        ? updatedUsers.map(user => ({
-            firstName: user.firstName,
-            lastName: user.lastName,
-            email: user.email,
-            id: user.id,
-            username: user.username,
-            rol: getRol(user),
-            añoAcademico: getActualYear()
-          }))
-        : [];
-
-      data.value = updatedUsuariosTransformados;
+      data.value = usuariosConArchivoActualizado;
 
     } catch (error) {
-      console.error('Error al obtener usuarios o alumnos:', error);
+      console.error('Error al obtener usuarios o buckets:', error);
     } finally {
       loading.value = false;
     }
   }
 });
 
+const fetchArchivoSubidoUsuarioActual = async (usuariosTransformados) => {
+  const usuarioActual = usuariosTransformados.find(user => user.username === userStore.username);
+  console.log("user actual es: ", usuarioActual)
+  const apellidos = usuarioActual.lastName.replace(/\s+/g, '');
+  const nombre = usuarioActual.firstName.trim();
+  const bucketNameUsuarioActual = normalizeBucketName(`${apellidos},${nombre}`);
 
-// onMounted(async () => {
-//     console.log('isAdmin:', props.isAdmin);
-//     if (props.isAdmin) {
-//       await fetchUsers();
-//       try {
-//         data.value = await fetchAlumnos();
-//       } catch (error) {
-//         console.error('Error al obtener alumnos:', error);
+  userStore.setBucketName(bucketNameUsuarioActual);
+
+  if (!usuarioActual) return usuariosTransformados;
+
+  const usuariosConArchivos = await Promise.all(
+    usuariosTransformados.map(async (user) => {
+      const bucketName = normalizeBucketName(`${user.lastName.replace(/\s+/g, '')},${user.firstName.trim()}`);
+      console.log("[BUCKET FETCH]", bucketName)
+      try {
+        const res = await axios.get(`http://localhost:3000/bucket-files/${bucketName}`, {
+          headers: {
+            Authorization: `Bearer ${userStore.token}`
+          }
+        });
+        console.log("[RESPONSE] fetch", res.data)
+        return {
+          ...user,
+          archivoSubido: Array.isArray(res.data.files) && res.data.files.length > 0
+        };
+      } catch (err) {
+        return {
+          ...user,
+          archivoSubido: false
+        };
+      }
+    })
+  );
+  console.log("USer con archivos: ", usuariosConArchivos)
+  return usuariosConArchivos;
+};
+
+
+// const fetchUploadedFilesPorUsuario = async (usuarios) => {
+//   const resultados = [];
+//   for (const user of usuarios) {
+//     const apellidos = user.lastName.replace(/\s+/g, '');
+//     const nombre = user.firstName.trim();
+//     const bucketName = normalizeBucketName(`${apellidos},${nombre}`);
+
+//     try {
+//       const res = await axios.get(`http://localhost:3000/bucket-files/${bucketName}`, {
+//         headers: {
+//           Authorization: `Bearer ${userStore.token}`
+//         }
+//       });
+//       console.log(`Archivos encontrados para ${bucketName}:`, res.data);
+
+//       if (Array.isArray(res.data) && res.data.length > 0) {
+//         user.archivoSubido = true;
+//       } else {
+//         user.archivoSubido = false;
 //       }
+//     } catch (error) {
+//       console.error(`Error al verificar archivos de ${user.username}:`, error);
+//       user.archivoSubido = false;
+//       resultados.push({ ...user, archivoSubido: [] }); 
 //     }
+//   }
 
-// });
+//   return usuarios;
+// };
+
 
 const columns = [
     {
@@ -214,6 +368,16 @@ const columns = [
       width: 90,
     },
     {
+      title: 'Archivo Subido',
+      key: 'archivoSubido',
+      width: 120,
+      render(row) {
+        return row.archivoSubido
+          ? h('span', { style: 'color: green;' }, '✔️ Sí')
+          : h('span', { style: 'color: red;' }, '❌ No');
+      }
+    },
+    {
       title: 'Acciones',
       key: 'acciones',
       width: 90,
@@ -224,7 +388,8 @@ const columns = [
             size: 'small',
             type: 'info',
             onClick: () => openViewModal(row),
-            title: 'Ver tienda'
+            title: 'Ver tienda',
+            disabled: !row.archivoSubido 
           },
           {
             default: () => h(NIcon, () => h(ViewIcon))
@@ -328,15 +493,12 @@ const handleRowClick = (row) => {
   }
 };
 
-
-
 const rowProps = (row) => {
   return {
     style: 'cursor: pointer;',
     onClick: () => handleRowClick(row)
   };
 };
-
 
 const deleteSelectedUsers = () => {
   const usersToDelete = data.value.filter(user => checkedRowKeysRef.value.includes(user.id));
@@ -407,7 +569,11 @@ const fetchUsers = async () => {
         rol: getRol(user),
         añoAcademico: getActualYear()
       }));
-      
+       // 🔁 Aquí es donde llamas a tu función que consulta MinIO
+      const usuariosConArchivo = await fetchArchivoSubidoUsuarioActual(usuariosTransformados);
+
+      // ✅ Ahora actualizas data.value con estos datos enriquecidos
+      data.value = usuariosConArchivo;
     } else {
       console.error("La respuesta no es un array de usuarios");
     }
@@ -420,10 +586,11 @@ const fetchUsers = async () => {
 
 const getRol = (newUser) => {
   if (!isValidEmail(newUser.email)) {
-        newUser.email = ""; 
-        return "";
-    }
-    return newUser.email.endsWith("@alumnos.upm.es") ? "Usuario" : "Profesor";
+    console.warn(`Email inválido detectado: ${newUser.email}`);
+    newUser.email = ""; 
+    return "";
+  }
+  return newUser.email.endsWith("@alumnos.upm.es") ? "Usuario" : "Profesor";
 }
 
 const handleUserAdded = (newUser) => {
@@ -435,6 +602,9 @@ const handleUserAdded = (newUser) => {
       lastName: newUser.lastName,
       email: newUser.email,
       rol: getRol(newUser),
+      username: newUser.username,
+      id: newUser.id,
+      añoAcademico: getActualYear()
     });
   }
 };

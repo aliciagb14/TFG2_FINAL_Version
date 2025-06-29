@@ -1,86 +1,96 @@
 <template>
-    <div class="file-upload-container">
-        <n-card title="MinIO File Upload" class="upload-card">
-        <n-upload
-            ref="uploadRef"
-            multiple
-            :default-upload="false"
-            :accept="acceptedFileTypes"
-            :max-size="10 * 1024 * 1024"
-            @change="handleChange"
-        >
-            <n-upload-dragger>
-            <div class="upload-dragger-content">
-                <n-icon size="48" :depth="3">
-                <cloud-upload-outline />
-                </n-icon>
-                <div class="upload-text">
-                <p><strong>Drop files here or click to upload</strong></p>
-                <p style="margin-top: 8px">
-                    Supports .zip or .xlsx files
-                </p>
-                </div>
+  <div class="file-upload-container">
+    <n-card class="upload-card">
+      <h1>Bucket: {{ bucketName || 'No definido' }}</h1>
+      
+      <n-upload
+          ref="uploadRef"
+          multiple
+          :default-upload="false"
+          :accept="acceptedFileTypes"
+          :max-size="10 * 1024 * 1024"
+          @change="handleChange"
+      >
+        <n-upload-dragger>
+          <div class="upload-dragger-content">
+            <n-icon size="48" :depth="3">
+              <cloud-upload-outline />
+            </n-icon>
+            <div class="upload-text">
+              <p><strong>Drop files here or click to upload</strong></p>
+              <p style="margin-top: 8px">Supports .zip or .xlsx files</p>
             </div>
-            </n-upload-dragger>
-        </n-upload>
-    
-        <n-button
-            type="primary"
-            class="upload-button"
-            :disabled="files.length === 0 || uploading"
-            @click="handleUpload"
-        >
-            <template #icon>
-            <n-icon><cloud-upload-outline /></n-icon>
+          </div>
+        </n-upload-dragger>
+      </n-upload>
+
+      <n-button
+          type="primary"
+          class="upload-button"
+          :disabled="files.length === 0 || uploading"
+          @click="handleUpload"
+      >
+        <template #icon>
+          <n-icon><cloud-upload-outline /></n-icon>
+        </template>
+        Upload Files
+      </n-button>
+
+      <div v-if="message" class="status-message" :class="messageType">{{ message }}</div>
+
+      <div v-if="files.length > 0" class="file-list">
+        <h3>Selected Files:</h3>
+        <n-list>
+          <n-list-item v-for="(file, index) in files" :key="index">
+            <n-thing :title="file.name">
+              <template #description>
+                <n-text>Size: {{ formatSize(file.file.size) }}</n-text>
+              </template>
+            </n-thing>
+          </n-list-item>
+        </n-list>
+      </div>
+
+      <n-card title="Ficheros Subidos" class="mt-4">
+        <p><strong>Bucket:</strong> {{ normalizeBucketName(bucketName) }}</p>
+        <n-list bordered>
+          <n-list-item v-for="(file, index) in uploadedFiles" :key="index">
+            <template #prefix>
+              <n-icon size="20" :component="CloudUploadOutline" />
             </template>
-            Upload Files
-        </n-button>
-    
-        <div v-if="message" class="status-message" :class="messageType">
-            {{ message }}
-        </div>
-    
-        <div v-if="files.length > 0" class="file-list">
-            <h3>Selected Files:</h3>
-            <n-list>
-            <n-list-item v-for="(file, index) in files" :key="index">
-                <n-thing :title="file.name">
-                <template #description>
-                    <n-text>Size: {{ formatSize(file.file.size) }}</n-text>
-                </template>
-                </n-thing>
-            </n-list-item>
-            </n-list>
-        </div>
-    
-        <div v-if="uploadedFiles.length > 0" class="uploaded-files">
-            <h3>Uploaded Files:</h3>
-            <n-list>
-            <n-list-item v-for="(file, index) in uploadedFiles" :key="index">
-                {{ file }}
-            </n-list-item>
-            </n-list>
-        </div>
-        </n-card>
-    </div>
+            <n-thing>
+              <template #header>{{ file }}</template>
+              <template #description>
+                <n-button
+                  size="small"
+                  type="primary"
+                  tag="a"
+                  :href="`http://localhost:3000/bucket-file/${normalizeBucketName(bucketName)}/${encodeURIComponent(file)}`"
+                  target="_blank"
+                >
+                  Ver / Descargar
+                </n-button>
+              </template>
+            </n-thing>
+          </n-list-item>
+        </n-list>
+      </n-card>
+    </n-card>
+  </div>
 </template>
-    
+
 <script setup>
-import { ref } from 'vue';
-import { NUpload, NUploadDragger, NCard, NButton, NListItem, NList, NIcon, NThing } from 'naive-ui'
+import { ref, onMounted, watch } from 'vue';
+import { NUpload, NUploadDragger, NCard, NButton, NListItem, NList, NIcon, NThing, NText } from 'naive-ui';
 import { CloudUploadOutline } from '@vicons/ionicons5';
 import axios from 'axios';
 import { useMessage } from 'naive-ui';
+import { getUsers } from '@/services/UserService'
 import { useUserDataStore } from '@/stores/keycloakUserData'
 
-const userStore  = useUserDataStore()
-const isAdmin = userStore.isAdmin
-const isAlumno = !isAdmin
-const userLogged = userStore.username
-const token = userStore.token; 
-
-const acceptedFileTypes = isAdmin ? '.xlsx' : isAlumno ? '.zip' : '';
-
+const userStore  = useUserDataStore();
+const bucketName = ref(userStore.bucketName || '');
+const acceptedFileTypes = userStore.isAdmin ? '.xlsx' : '.zip,.rar';
 const nMessage = useMessage();
 
 const uploadRef = ref(null);
@@ -90,37 +100,66 @@ const message = ref('');
 const messageType = ref('');
 const uploadedFiles = ref([]);
 
+onMounted(async () => {
+  if (!bucketName.value) {
+    try {
+      const users = await getUsers();
+      const generated = generateBucketName(users);
+      if (generated) {
+        bucketName.value = generated;
+        userStore.setBucketName(generated);
+      }
+    } catch (err) {
+      console.error("Error al generar bucketName en Upload.vue", err);
+    }
+  }
+  uploadedFiles.value  = await fetchUploadedFiles();
+  if (userStore.isAdmin && uploadedFiles.length > 0) {
+    router.push({ path: '/files', query: { bucket: bucketName.value, file: uploadedFiles[0] } });
+  }
+});
+
+watch(() => userStore.bucketName, async (newVal) => {
+  if (newVal) {
+    bucketName.value = newVal;
+    await fetchUploadedFiles();
+  }
+});
+
+const generateBucketName = (users) => {
+  const user = users.find(u => u.username === userStore.username);
+  if (user) {
+    const apellidos = user.lastName.replace(/\s+/g, '');
+    const nombre = user.firstName.trim();
+    return `${apellidos},${nombre}`;
+  }
+  return null;
+};
+
 const handleChange = (options) => {
-files.value = options.fileList;
-message.value = '';
+  files.value = options.fileList;
+  message.value = '';
 };
 
 const formatSize = (size) => {
-if (size < 1024) {
-    return size + ' B';
-} else if (size < 1024 * 1024) {
-    return (size / 1024).toFixed(2) + ' KB';
-} else if (size < 1024 * 1024 * 1024) {
-    return (size / (1024 * 1024)).toFixed(2) + ' MB';
-} else {
-    return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
-}
+  if (size < 1024) return size + ' B';
+  else if (size < 1024 * 1024) return (size / 1024).toFixed(2) + ' KB';
+  else if (size < 1024 * 1024 * 1024) return (size / (1024 * 1024)).toFixed(2) + ' MB';
+  else return (size / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
 };
 
 const handleUpload = async () => {
   if (files.value.length === 0) return;
 
   for (const file of files.value) {
-    if (isAdmin && !file.file.name.endsWith('.xlsx')) {
-      console.log("hola soy profesor")
+    if (userStore.isAdmin && !file.file.name.endsWith('.xlsx')) {
       message.value = 'Admins solo pueden subir archivos .xlsx';
       messageType.value = 'error';
       nMessage.error(message.value);
       return;
     }
-    if (isAlumno && !file.file.name.endsWith('.zip')) {
-      console.log("hola soy alumno")
-      message.value = 'Alumnos solo pueden subir archivos .zip';
+    if (!userStore.isAdmin && !(file.file.name.endsWith('.zip') || file.file.name.endsWith('.rar'))) {
+      message.value = 'Alumnos solo pueden subir archivos .zip o .rar';
       messageType.value = 'error';
       nMessage.error(message.value);
       return;
@@ -133,37 +172,70 @@ const handleUpload = async () => {
 
   try {
     const formData = new FormData();
-    files.value.forEach(file => {
-      formData.append('file', file.file);
-    });
-    const response = await axios.post('http://localhost:3000/upload', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        Authorization: `Bearer ${token}`
+    files.value.forEach(file => formData.append('file', file.file));
+    formData.append('bucketName', bucketName.value);
+
+    await axios.post(
+      `http://localhost:3000/upload/${bucketName.value}`,
+      formData,
+      {
+        headers: {
+          Authorization: `Bearer ${userStore.token}`,
+          'Content-Type': 'multipart/form-data'
+        }
       }
-    });
+    );
 
-    if (response.data) {
-      message.value = 'Files uploaded successfully!';
-      messageType.value = 'success';
-      nMessage.success('Files uploaded to MinIO successfully');
-      uploadedFiles.value = [...uploadedFiles.value, ...files.value.map(f => f.name)];
+    message.value = 'Upload successful';
+    messageType.value = 'success';
+    files.value = [];
 
-      files.value = [];
-      if (uploadRef.value) uploadRef.value.clear();
-    } else {
-      throw new Error('Upload failed');
-    }
+    uploadedFiles.value = await fetchUploadedFiles();
   } catch (error) {
-    console.error('Upload error:', error);
-    message.value = `Upload failed: ${error.response?.data?.message || error.message}`;
+    console.error(error);
+    message.value = 'Error uploading files';
     messageType.value = 'error';
     nMessage.error(message.value);
   } finally {
     uploading.value = false;
   }
 };
+
+const normalizeBucketName = (name) => {
+  return name
+    .toLowerCase()
+    .replace(/[,]/g, '-')
+};
+
+const fetchUploadedFiles = async () => {
+  if (!bucketName.value) return;
+  try {
+    console.log("Buscando ficheros en: ", bucketName.value)
+    const normalizedBucket = normalizeBucketName(bucketName.value);
+    console.log("Buscando ficheros tras transformar bucket en: ", normalizedBucket)
+
+    const res = await axios.get(`http://localhost:3000/bucket-files/${normalizedBucket}`, {
+      headers: {
+        Authorization: `Bearer ${userStore.token}`
+      }
+    });
+    
+    console.log(`Archivos encontrados para ${bucketName}:`, res.data);
+
+    if (Array.isArray(res.data)) {
+      uploadedFiles.value = res.data;
+    } else {
+      uploadedFiles.value = [];
+    }
+    console.log("Los ficheros encontrados son: ", res.data)
+    return res.data
+  } catch (error) {
+    console.error("Error fetching uploaded files:", error);
+    uploadedFiles.value = [];
+  }
+};
 </script>
+
 <style scoped>
 
 .upload-dragger-content {
@@ -173,5 +245,14 @@ const handleUpload = async () => {
   padding: 100px;
   border-radius: 8px;
   background-color: white;
+}
+
+.upload-card {
+  width:700px;
+  height: 700px;
+  margin: 0 auto; /* Centrar horizontalmente */
+  padding: 16px;
+  border-radius: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 </style>

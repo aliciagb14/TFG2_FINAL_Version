@@ -6,6 +6,7 @@ const fs = require('fs');
 const XLSX = require('xlsx');
 
 const app = express();
+app.use(express.json()); 
 app.use(cors({
   origin: 'http://localhost:5173',  // Permite solo tu frontend
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -41,11 +42,36 @@ const extractUser = (req, res, next) => {
   }
 };
 
+app.post('/create-bucket', extractUser, async (req, res) => {
+  const { bucketName } = req.body;
+  const { roles } = req.user;
+  const clientBucketName = req.body.bucketName?.toLowerCase();
+  if (!roles.includes('admin')) {
+    return res.status(403).json({ message: 'Solo los admins pueden crear buckets' });
+  }
+
+  if (!bucketName) {
+    return res.status(400).json({ message: 'Debe proporcionar un bucketName' });
+  }
+
+  try {
+    const exists = await minioClient.bucketExists(clientBucketName);
+    if (!exists) await minioClient.makeBucket(clientBucketName);
+    res.status(201).json({ message: 'Bucket creado exitosamente', clientBucketName });
+  } catch (error) {
+    console.error('Error creando bucket:', error);
+    res.status(500).json({ message: 'Error creando bucket', error: error.message });
+  }
+});
+
+
 app.post('/upload', extractUser, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
     const { username, roles } = req.user;
+    const clientBucketName = req.body.bucketName?.toLowerCase();
+    
     const isAdmin = roles.includes('admin');
     const isAlumno = roles.includes('alumno');
 
@@ -55,12 +81,19 @@ app.post('/upload', extractUser, upload.single('file'), async (req, res) => {
       if (!req.file.originalname.endsWith('.xlsx')) {
         return res.status(400).json({ message: 'Admins solo pueden subir .xlsx' });
       }
-      bucketName = 'alumnos';
-    } else if (isAlumno) {
-      if (!req.file.originalname.endsWith('.zip')) {
-        return res.status(400).json({ message: 'Alumnos solo pueden subir .zip' });
+
+      // Validar bucket permitido para admin
+      if (!clientBucketName) {
+        return res.status(400).json({ message: 'Admin debe especificar bucketName' });
       }
-      bucketName = username.toLowerCase();
+
+      bucketName = clientBucketName;
+    } else if (isAlumno) {
+      if (!(req.file.originalname.endsWith('.zip') || req.file.originalname.endsWith('.rar'))) {
+        return res.status(400).json({ message: 'Alumnos solo pueden subir .zip o .rar' });
+      }
+
+      bucketName = clientBucketName;
     } else {
       return res.status(403).json({ message: 'No autorizado' });
     }
@@ -129,6 +162,55 @@ app.get('/alumnos', extractUser, async (req, res) => {
   } catch (error) {
     console.error('Error al leer alumnos:', error);
     res.status(500).json({ message: 'Error al obtener alumnos', error: error.message });
+  }
+});
+
+//Comprueba si bucket existe o no
+app.get('/bucket-exists/:bucketName', async (req, res) => {
+  const { bucketName } = req.params;
+  try {
+    const exists = await minioClient.bucketExists(bucketName);
+    return res.json({ exists });
+  } catch (error) {
+    console.error("Error checking bucket existence:", error);
+    return res.status(500).json({ error: "Failed to check bucket" });
+  }
+});
+
+
+// Obtener los ficheros del bucket
+app.get('/bucket-files/:bucketName', async (req, res) => {
+  const { bucketName } = req.params;
+  try {
+    const files = [];
+    const stream = minioClient.listObjectsV2(bucketName, '', true);
+    stream.on('data', obj => files.push(obj.name));
+    stream.on('end', () => res.json({ files }));
+    stream.on('error', err => {
+      console.error(err);
+      res.status(500).json({ message: "Error listando archivos" });
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error general" });
+  }
+});
+
+app.get('/bucket-file/:bucketName/:filename', async (req, res) => {
+  const { bucketName, filename } = req.params;
+  try {
+    await minioClient.getObject(bucketName, filename, (err, stream) => {
+      if (err) {
+        console.error("Error al obtener archivo:", err);
+        return res.status(404).json({ message: "Archivo no encontrado" });
+      }
+
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      stream.pipe(res);
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Error descargando archivo" });
   }
 });
 

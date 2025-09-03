@@ -1,6 +1,5 @@
 import axios from 'axios';
 import KeycloakService from '@/keycloak';
-import { useUserDataStore } from '@/stores/keycloakUserData';
 
 
 export async function getUsers() {
@@ -33,43 +32,6 @@ export async function deleteUserKeycloak(userId) {
   }
 }
 
-//llamada a minio
-export async function fetchAlumnos() {
-  const userStore = useUserDataStore();
-  try {
-    const response = await axios.get('http://localhost:3000/alumnos', {
-      headers: {
-        Authorization: `Bearer ${userStore.token}`
-      }
-    });
-    
-    const rawAlumnos = response.data.alumnos;
-    const currentYear = new Date().getFullYear();
-    console.log("alumnos: ", rawAlumnos)
-    console.log("año act: ", currentYear)
-    return rawAlumnos.map(alumno => {
-      const email = alumno["Dirección de correo"]?.trim() || "";
-      
-      return {
-        firstName: alumno["Nombre"],
-        lastName: alumno["Apellido(s)"],
-        email: alumno["Dirección de correo"],
-        username: alumno["Nº matrícula"],
-        rol: email.endsWith("@alumnos.upm.es")
-              ? "Usuario"
-              : email.endsWith("@upm.es")
-              ? "Profesor"
-              : "Inválido",
-        añoAcademico: currentYear
-      };
-    });
-  } catch (error) {
-      console.error("Error al obtener alumnos:", error);
-      throw error;
-  }
-
-}
-
 export async function updateUserKeycloak(user) {
     const token = await getAdminToken()
 
@@ -89,7 +51,7 @@ export async function updateUserKeycloak(user) {
     };
 
     try {
-        const response = await axios.put(`http://localhost:8080/admin/realms/ComercioElectronico/users/${user.id}`, {
+        const response = await axios.put(`http://localhost:8180/admin/realms/ComercioElectronico/users/${user.id}`, {
             firstName: user.firstName,
             lastName: user.lastName,
             email: user.email,

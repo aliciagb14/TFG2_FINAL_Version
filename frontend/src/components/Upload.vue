@@ -88,6 +88,14 @@ import { useMessage } from 'naive-ui';
 import { getUsers } from '@/services/UserService'
 import { useUserDataStore } from '@/stores/keycloakUserData'
 
+function normalizeBucketName(name) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[, ]+/g, '-')       // coma o espacios -> guion
+    .replace(/[^a-z0-9.-]/g, ''); // quitar caracteres inválidos
+}
+
 const userStore  = useUserDataStore();
 const bucketName = ref(userStore.bucketName || '');
 const acceptedFileTypes = userStore.isAdmin ? '.xlsx' : '.zip,.rar';
@@ -174,9 +182,9 @@ const handleUpload = async () => {
     const formData = new FormData();
     files.value.forEach(file => formData.append('file', file.file));
     formData.append('bucketName', bucketName.value);
-
+    const bucketFormatOKName = normalizeBucketName(bucketName.value)
     await axios.post(
-      `http://localhost:3000/upload/${bucketName.value}`,
+      `http://localhost:3000/upload/${bucketFormatOKName}`,
       formData,
       {
         headers: {
@@ -201,11 +209,7 @@ const handleUpload = async () => {
   }
 };
 
-const normalizeBucketName = (name) => {
-  return name
-    .toLowerCase()
-    .replace(/[,]/g, '-')
-};
+
 
 const fetchUploadedFiles = async () => {
   if (!bucketName.value) return;
@@ -220,7 +224,7 @@ const fetchUploadedFiles = async () => {
       }
     });
     
-    console.log(`Archivos encontrados para ${bucketName}:`, res.data);
+    console.log(`Archivos encontrados para ${normalizedBucket}:`, res.data);
 
     if (Array.isArray(res.data)) {
       uploadedFiles.value = res.data;

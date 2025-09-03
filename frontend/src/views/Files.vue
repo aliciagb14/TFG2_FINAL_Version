@@ -1,9 +1,7 @@
 <template>
-  <h1>Files</h1>
   <Sidebar></Sidebar>
   <Upload/>
   <div class="content">
-    
     <router-view></router-view>
   </div>
 </template>

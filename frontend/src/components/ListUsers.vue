@@ -139,100 +139,9 @@ const createBucketsForUsers = async (usuarios) => {
   }
 };
 
-// onMounted(async () => {
-//   console.log('isAdmin:', props.isAdmin);
-
-//   if (props.isAdmin) {
-//     try {
-//       loading.value = true;
-
-//       const usuarios = await getUsers();
-//       console.log("Users keycloak: ", usuarios)
-//       const bucketName = generateBucketName(usuarios)
-//       const normBucketName = normalizeBucketName(bucketName)
-//       if (bucketName) {
-//         userStore.setBucketName(normBucketName)
-//         console.log("ALIIIIIIIIIIII el bucket es: ", normBucketName)
-//         await createBucket(normBucketName);
-//       }
-//       const usuariosTransformados = Array.isArray(usuarios)
-//         ? usuarios.map(user => ({
-//             firstName: user.firstName,
-//             lastName: user.lastName,
-//             email: user.email,
-//             id: user.id,
-//             username: user.username,
-//             rol: getRol(user),
-//             añoAcademico: getActualYear(),
-//             archivoSubido: user.archivoSubido 
-//           }))
-//         : [];
-
-//       // Paso 2: obtener alumnos de MinIO
-//       let alumnos = [];
-
-//       try {
-//         // Esto lanza un error 404 si no hay archivo
-//         const result = await fetchAlumnos();
-//         alumnos = result;
-//       } catch (err) {
-//         if (err.response && err.response.status === 404) {
-//           console.warn('No hay archivo de alumnos en MinIO aún.');
-//         } else if (err.response && err.response.status === 500) {
-//           error.value = 'Error del servidor al intentar leer los alumnos.';
-//         } else {
-//           error.value = 'Error inesperado.';
-//         }
-//       }
-
-//       // Paso 3: crear en Keycloak si no existen
-//       for (const alumno of alumnos) {
-//         const yaExiste = usuariosTransformados.some(
-//           u => u.username === alumno.username || u.email === alumno.email
-//         );
-
-//         if (!yaExiste) {
-//           try {
-//             await createUserKeycloak({
-//               firstName: alumno.firstName,
-//               lastName: alumno.lastName,
-//               email: alumno.email,
-//               username: alumno.username,
-//               password: '12345678',
-//               rol: alumno.rol
-//             });
-//             console.log(`Usuario ${alumno.username} creado en Keycloak`);
-//           } catch (error) {
-//             console.error(`Error al crear ${alumno.username}:`, error);
-//           }
-//         }
-//       }
-
-//       // Paso 4: refrescar usuarios tras crear nuevos
-//       const updatedUsers = await getUsers();
-//       const updatedUsuariosTransformados = Array.isArray(updatedUsers)
-//         ? updatedUsers.map(user => ({
-//             firstName: user.firstName,
-//             lastName: user.lastName,
-//             email: user.email,
-//             id: user.id,
-//             username: user.username,
-//             rol: getRol(user),
-//             añoAcademico: getActualYear()
-//           }))
-//         : [];
-      
-//       data.value = await fetchUploadedFilesPorUsuario(updatedUsuariosTransformados);
-//     } catch (error) {
-//       console.error('Error al obtener usuarios o alumnos:', error);
-//     } finally {
-//       loading.value = false;
-//     }
-//   }
-// });
-
 onMounted(async () => {
   if (props.isAdmin) {
+    console.log("SOY ADMIN")
     try {
       loading.value = true;
 
@@ -248,7 +157,7 @@ onMounted(async () => {
             username: user.username,
             rol: getRol(user),
             añoAcademico: getActualYear(),
-            archivoSubido: false
+            archivoSubido: false,
           }))
         : [];
 
@@ -257,14 +166,55 @@ onMounted(async () => {
 
       // Paso 3: actualizar el flag archivoSubido sólo para usuario actual
       const usuariosConArchivoActualizado = await fetchArchivoSubidoUsuarioActual(usuariosTransformados);
-
       data.value = usuariosConArchivoActualizado;
+
+       // Paso 2: obtener alumnos de MinIO
+      let alumnos = [];
+      const result = await fetchAlumnos(userStore.bucketName);   
+      alumnos = result;
+      console.log("alumnos: ", alumnos)
+
+      for (const alumno of alumnos) {
+        const yaExiste = usuariosTransformados.some(
+          u => u.username === alumno.username || u.email === alumno.email
+        );
+
+        if (!yaExiste) {
+          try {
+            await createUserKeycloak({
+              firstName: alumno.firstName,
+              lastName: alumno.lastName,
+              email: alumno.email,
+              username: alumno.username, // ahora sí lo usa el backend
+              password: '12345678',
+              rol: alumno.rol
+            });
+            console.log(`Usuario ${alumno.username} creado en Keycloak`);
+          } catch (error) {
+            console.error(`Error al crear ${alumno.username}:`, error);
+          }
+        }
+      }
+
 
     } catch (error) {
       console.error('Error al obtener usuarios o buckets:', error);
     } finally {
       loading.value = false;
     }
+  } else {
+    console.log("NO soy admin, soy alumno: ", !props.isAdmin)
+    const bucketFormatOKName = normalizeBucketName(bucketName.value)
+    await axios.post(
+      `http://localhost:3000/upload/${bucketFormatOKName}`,
+      formData,
+      {
+        headers: {
+          Authorization: `Bearer ${userStore.token}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      }
+    );
   }
 });
 
@@ -569,10 +519,8 @@ const fetchUsers = async () => {
         rol: getRol(user),
         añoAcademico: getActualYear()
       }));
-       // 🔁 Aquí es donde llamas a tu función que consulta MinIO
       const usuariosConArchivo = await fetchArchivoSubidoUsuarioActual(usuariosTransformados);
 
-      // ✅ Ahora actualizas data.value con estos datos enriquecidos
       data.value = usuariosConArchivo;
     } else {
       console.error("La respuesta no es un array de usuarios");

@@ -21,10 +21,12 @@ async function init(onInitCallback) {
     authenticated = await keycloak.init({ 
         onLoad: 'login-required',
         pkceMethod: 'S256',
-        redirectUri: 'http://localhost:5173/'
+        redirectUri: 'http://localhost:5173',
+        enableLogging: true
      })
      
     if (authenticated) {
+      const userStore = useUserDataStore()
         const token = keycloak.token;
         const tokenDecoded = JSON.parse(atob(token.split('.')[1]));
         console.log("token recibido (decoded): ", tokenDecoded)
@@ -36,6 +38,9 @@ async function init(onInitCallback) {
         const matchingRoles = roles.filter(role =>
           validRoles.includes(role.toLowerCase())
         );
+
+        const lastName = tokenDecoded.lastName
+        const firstName = tokenDecoded.firstName
         
         if (matchingRoles.length === 0) {
           console.error("No se encontró un rol válido.");
@@ -44,8 +49,7 @@ async function init(onInitCallback) {
 
         console.log("roles de keycloak: ", roles, "roles backend: ", validRoles)
         console.log("el rol match es: ", matchingRoles)
-        const userStore = useUserDataStore()
-        userStore.setUser(user, roles, roles.includes('admin'), token)
+        userStore.setUser(user, roles, roles.includes('admin'), token, firstName, lastName)
 
     }
     onInitCallback()

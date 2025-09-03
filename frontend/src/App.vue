@@ -1,6 +1,5 @@
 <template>
   <div id="app">
-    <!-- <Login/> -->
      <n-dialog-provider>
     <n-config-provider>
     <n-message-provider>

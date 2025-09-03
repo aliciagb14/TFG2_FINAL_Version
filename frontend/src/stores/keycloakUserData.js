@@ -5,7 +5,8 @@ export const useUserDataStore = defineStore('user', {
         username: localStorage.getItem('username') || '',
         roles: JSON.parse(localStorage.getItem('roles') || '[]'),
         isAdmin: false,
-        token: localStorage.getItem('token') || ''
+        token: localStorage.getItem('token') || '',
+        bucketName: ''
     }),
     getters: {
         isLoggedIn: (state) => !!state.username,
@@ -34,6 +35,9 @@ export const useUserDataStore = defineStore('user', {
             localStorage.removeItem('roles');
             localStorage.removeItem('token');
         },
+        setBucketName(bucketName) {
+            this.bucketName = bucketName;
+        }
     },
 });
 

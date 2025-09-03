@@ -35,7 +35,7 @@ async function getAdminToken() {
 //CREAR USER
 app.post('/api/users', async (req, res) => {
   try {
-    const { firstName, lastName, email, password } = req.body;
+    const { firstName, lastName, email, password, rol } = req.body;
     const adminToken = await getAdminToken();
 
     const username = email.split('@')[0];
@@ -66,6 +66,38 @@ app.post('/api/users', async (req, res) => {
       }
     );
 
+    const userResp = await axios.get(
+      `${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users?username=${username}`,
+      {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      }
+    );
+    const createdUser = userResp.data[0];
+    if (!createdUser) {
+      return res.status(500).json({ error: 'Usuario creado pero no encontrado' });
+    }
+
+    const rolesResp = await axios.get(
+      `${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/roles`,
+      {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      }
+    );
+
+    const role = rolesResp.data.find(r => r.name === rol);
+    if (!role) {
+      return res.status(400).json({ error: `El rol ${rol} no existe en Keycloak` });
+    }
+    await axios.post(
+      `${KEYCLOAK_URL}/admin/realms/${KEYCLOAK_REALM}/users/${createdUser.id}/role-mappings/realm`,
+      [role],
+      {
+        headers: {
+          Authorization: `Bearer ${adminToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
     res.status(201).json({ message: 'Usuario creado exitosamente' });
   } catch (error) {
     console.error('Error creando usuario:', error.response?.data || error.message);

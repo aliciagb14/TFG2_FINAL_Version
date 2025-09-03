@@ -19,8 +19,8 @@ const minioClient = new Minio.Client({
   endPoint: 'localhost',
   port: 9000,
   useSSL: false,
-  accessKey: 'cDop9p81OOlFLC6racUr',
-  secretKey: 'Nu73OuRus4DyYE8ofEyN2XZ2DakslpQ84MHT2ocN'
+  accessKey: '08ic8VMbfFjRuJitJk7w',
+  secretKey: 'gMFQUk6DqQOAeEGawvSmlx8NwdkFwfnXIvvo0Q3f'
 });
 
 // Middleware para extraer user y roles del token (simplificado)
@@ -65,59 +65,35 @@ app.post('/create-bucket', extractUser, async (req, res) => {
 });
 
 
-app.post('/upload', extractUser, upload.single('file'), async (req, res) => {
+app.post('/upload/:bucketName', extractUser, upload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-    const { username, roles } = req.user;
-    const clientBucketName = req.body.bucketName?.toLowerCase();
-    
-    const isAdmin = roles.includes('admin');
-    const isAlumno = roles.includes('alumno');
-
-    let bucketName;
-
-    if (isAdmin) {
-      if (!req.file.originalname.endsWith('.xlsx')) {
-        return res.status(400).json({ message: 'Admins solo pueden subir .xlsx' });
-      }
-
-      // Validar bucket permitido para admin
-      if (!clientBucketName) {
-        return res.status(400).json({ message: 'Admin debe especificar bucketName' });
-      }
-
-      bucketName = clientBucketName;
-    } else if (isAlumno) {
-      if (!(req.file.originalname.endsWith('.zip') || req.file.originalname.endsWith('.rar'))) {
-        return res.status(400).json({ message: 'Alumnos solo pueden subir .zip o .rar' });
-      }
-
-      bucketName = clientBucketName;
-    } else {
-      return res.status(403).json({ message: 'No autorizado' });
+    const rawBucketName = req.params.bucketName || req.body.bucketName;
+    console.log("bucketName", rawBucketName)
+    // Crear bucket si no existe
+    const exists = await minioClient.bucketExists(rawBucketName);
+    if (!exists) {
+      await minioClient.makeBucket(rawBucketName);
+      console.log(`✅ Bucket ${rawBucketName} creado`);
     }
 
-    // Crear bucket si no existe
-    const exists = await minioClient.bucketExists(bucketName);
-    if (!exists) await minioClient.makeBucket(bucketName);
-
-    // Subir el archivo
+    // Subir fichero
     const fileStream = fs.createReadStream(req.file.path);
     const stat = fs.statSync(req.file.path);
 
-    await minioClient.putObject(bucketName, req.file.originalname, fileStream, stat.size);
+    await minioClient.putObject(rawBucketName, req.file.originalname, fileStream, stat.size);
 
     fs.unlinkSync(req.file.path);
 
-    res.json({ success: true, message: 'Archivo subido', bucket: bucketName, file: req.file.originalname });
+    res.json({ success: true, message: 'Archivo subido', bucket: rawBucketName, file: req.file.originalname });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Error en subida', error: error.message });
   }
 });
 
-app.get('/alumnos', extractUser, async (req, res) => {
+app.get('/alumnos/:bucketName', extractUser, async (req, res) => {
   try {
     const { roles } = req.user;
     const isAdmin = roles.includes('admin');
@@ -126,12 +102,17 @@ app.get('/alumnos', extractUser, async (req, res) => {
       return res.status(403).json({ message: 'Solo los admins pueden ver alumnos' });
     }
 
-    const bucketName = 'alumnos';
+    const bucketName = req.params.bucketName.toLowerCase();
+    console.log("Buscando bucket:", bucketName);
+
+    const exists = await minioClient.bucketExists(bucketName);
+    if (!exists) {
+      return res.status(404).json({ message: `El bucket ${bucketName} no existe` });
+    }
 
     const objectsStream = minioClient.listObjectsV2(bucketName, '', true);
 
     let fileFound = null;
-
     for await (const obj of objectsStream) {
       if (obj.name.endsWith('.xlsx')) {
         fileFound = obj.name;
@@ -140,22 +121,19 @@ app.get('/alumnos', extractUser, async (req, res) => {
     }
 
     if (!fileFound) {
-      return res.status(404).json({ message: 'No se encontró archivo .xlsx en bucket alumnos' });
+      return res.status(404).json({ message: 'No se encontró archivo .xlsx en bucket' });
     }
 
     const tempFilePath = `./temp/${fileFound}`;
-
     await new Promise((resolve, reject) => {
-      minioClient.fGetObject(bucketName, fileFound, tempFilePath, (err) => {
-        if (err) reject(err);
-        else resolve();
-      });
+      minioClient.fGetObject(bucketName, fileFound, tempFilePath, (err) =>
+        err ? reject(err) : resolve()
+      );
     });
 
     const workbook = XLSX.readFile(tempFilePath);
     const sheetName = workbook.SheetNames[0];
     const data = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
-
     fs.unlinkSync(tempFilePath);
 
     res.json({ alumnos: data });
@@ -164,6 +142,7 @@ app.get('/alumnos', extractUser, async (req, res) => {
     res.status(500).json({ message: 'Error al obtener alumnos', error: error.message });
   }
 });
+
 
 //Comprueba si bucket existe o no
 app.get('/bucket-exists/:bucketName', async (req, res) => {

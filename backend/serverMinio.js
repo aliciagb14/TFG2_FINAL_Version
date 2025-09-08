@@ -290,7 +290,21 @@ app.post('/upload/:bucketName', extractUser, upload.single('file'), async (req, 
         // Extraer ZIP interno de la tienda
         const tiendaZip = new AdmZip(tiendaZipPath);
         tiendaZip.extractAllTo(targetDir, true);
+        
+        const nestedDir = path.join(targetDir, nombreTienda);
+        if (fs.existsSync(nestedDir)) {
+          console.log(`📂 Corrigiendo carpeta duplicada: ${nestedDir}`);
+          const files = fs.readdirSync(nestedDir);
 
+          for (const file of files) {
+            fs.renameSync(
+              path.join(nestedDir, file),
+              path.join(targetDir, file)
+            );
+          }
+
+          fs.rmdirSync(nestedDir, { recursive: true });
+        }
         console.log(`Tienda ${nombreTienda} desplegada en htdocs`);
       }
     }

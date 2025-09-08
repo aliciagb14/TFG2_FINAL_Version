@@ -52,6 +52,60 @@ const extractUser = (req, res, next) => {
   }
 };
 
+async function createAndImportDB(nombreArchivo) {
+  try {
+    const dbName = nombreArchivo + '_db'; // nombre base de datos
+    // Conexión a MySQL
+    const connection = await mysql.createConnection({
+      host: 'localhost',
+      user: 'root',
+      password: '', // tu password de MySQL
+      multipleStatements: true
+    });
+    const [rows] = await connection.query(`SHOW DATABASES LIKE ?`, [dbName]);
+    if (rows.length > 0) {
+      console.log(`✅ Base de datos ${dbName} ya existe`);
+      await connection.end();
+      return { success: true, message: 'Base de datos ya creada' };
+    }
+    // Crear DB si no existe
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` CHARACTER SET latin1 COLLATE latin1_spanish_ci;`);
+    console.log(`✅ Base de datos ${dbName} creada`);
+
+    // Buscar archivo SQL ZIP en htdocs
+    const sqlZipPath = path.join('C:\\xampp\\htdocs', `${dbName}.sql.zip`);
+    if (!fs.existsSync(sqlZipPath)) {
+      console.log(`⚠️ SQL ZIP no encontrado en htdocs: ${sqlZipPath}`);
+      await connection.end();
+      return false;
+    }
+
+    // Extraer SQL del ZIP
+    const zip = new AdmZip(sqlZipPath);
+    const entries = zip.getEntries();
+    const sqlEntry = entries.find(e => e.entryName.endsWith('.sql'));
+    if (!sqlEntry) {
+      console.log('⚠️ No se encontró archivo .sql dentro del ZIP');
+      await connection.end();
+      return false;
+    }
+
+    const sqlContent = sqlEntry.getData().toString('utf-8');
+
+    // Importar SQL
+    await connection.query(`USE \`${dbName}\`;`);
+    await connection.query(sqlContent);
+    console.log(`✅ SQL importado en ${dbName}`);
+
+    await connection.end();
+    return true;
+
+  } catch (err) {
+    console.error('Error creando/importando DB:', err);
+    return false;
+  }
+}
+
 async function importarSQL(sqlPath, dbName) {
   const connection = await mysql.createConnection({
     host: 'localhost',
@@ -69,6 +123,25 @@ async function importarSQL(sqlPath, dbName) {
   console.log(`✅ Base de datos ${dbName} importada`);
   await connection.end();
 }
+
+app.post('/deploy-db', extractUser, async (req, res) => {
+  try {
+    const { nombreArchivo } = req.body;
+    const dbName = `${nombreArchivo}_db`;
+
+    const success = await createAndImportDB(nombreArchivo);
+
+    if (success) {
+      res.json({ success: true, message: 'Base de datos creada e importada' });
+    } else {
+      res.status(500).json({ success: false, message: 'No se pudo crear/importar la DB' });
+    }
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 
 app.post('/create-bucket', extractUser, async (req, res) => {
   const { bucketName } = req.body;

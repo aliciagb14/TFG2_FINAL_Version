@@ -155,3 +155,10 @@ httpd.exe
 ```
 
 ahora mismo la tienda que tengo subida en mi boton de ver tienda de prestashop (es la que he creado al instalarme todo lo necesario de prestashop + apache y lo tengi en; C:\xampp\htdocs\tiendaCE ) los alumnos deberan de subir un .zip de su carpeta de tienda (como la mia que llame teindaCE), pero debera llamarse ce_(3letras) que seran nombre y apellidos, si me llamo Sergio Gomez Lopez (mi tienda alojada en htdocs se llamará):  ce_sgl. Igualmente el alumno en cuestion (en el caso de Sergio) subira su .zip llamado ce_sgl.zip, este archivo sera el que deberemos de descomprimir y cargar en: C:\xampp\htdocs\ . Tambien debe de subirme su .sql que se llamara ce_sgl_db.sql en el caso de sergio. Si ahora Lorena Serrano Moreno sube su tienda virtual con minio (subiendo su .zip y su .sql), los ficheros se llamaran ce_lsm.zip (que habra que descomprimir en C:\xampp\htdocs) y ce_lsm_db.sql que sera su fichero mysql de la tienda virtual. Cuando el user con el rol de profesor le de al icono de visualizar, debera de poder ver la previsualizacion de la tienda virtual de prestashop.
+
+
+- Instalar: `npm install node-7z child_process`
+
+# en C/xampp/htdocs. meto el ce_XXX_db.sql.zip
+Creamos en php my admin la base de datos con el nombre: ce_XXX_db, marcando opcion latin1_spanish_ci.
+Una vez creada la base de datos, le damos a importar y debo importar en la bd q acabo de crear: ce_XXX_db.sql.zip

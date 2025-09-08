@@ -2,6 +2,7 @@ import { useUserDataStore } from '@/stores/keycloakUserData';
 import KeycloakService from '@/keycloak';
 import axios from 'axios';
 
+
 export async function uploadFileToMinio(file) {
   const formData = new FormData();
   formData.append("file", file);
@@ -77,3 +78,28 @@ export async function getPresignedPostData(fileName) {
 
   return await response.json();
 }
+
+
+export async function deployTienda(bucketName) {  // <-- quitar fileName
+  try {
+    const response = await fetch(`http://localhost:3000/deploy/${bucketName}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${localStorage.getItem("token")}`
+      }
+    });
+
+    const data = await response.json();
+    if (data.success) {
+      console.log("✅ Tienda desplegada:", data.url);
+      window.open(data.url, "_blank");
+    } else {
+      alert("Error desplegando tienda: " + data.error);
+    }
+  } catch (err) {
+    console.error("Error llamando a deploy:", err);
+    alert("Fallo al desplegar la tienda");
+  }
+}
+

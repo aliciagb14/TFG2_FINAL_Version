@@ -1,6 +1,9 @@
 <template>
   <h2>Bienvenido, {{ props.username }}</h2>
   <div class="table-header">
+    <NButton type="primary" @click="downloadExcel">
+      Download
+    </NButton>
     <div class="table-header-selected">
       <p>{{ selectedCount }} usuario(s) seleccionado(s)</p>
     </div>
@@ -59,16 +62,17 @@
 <script setup>
 import { ref, onMounted, h, watch, computed, reactive } from 'vue';
 import axios from 'axios';
-import { NDataTable, NIcon, NButton, NDatePicker, NRate, NModal } from 'naive-ui';
+import { NDataTable, NIcon, NButton, NDatePicker, NRate, NModal, NInputNumber } from 'naive-ui';
 import { getUsers, createUserKeycloak, deleteUserKeycloak } from '@/services/UserService';
 import { PersonAddSharp as AddUserIcon, 
         CloseCircleOutline as DeleteUserIcon, 
         CreateOutline as EditUserIcon,
         EyeOutline as ViewIcon 
       } from '@vicons/ionicons5';
-import { fetchAlumnos } from '@/services/MinioService';
-
-import { useUserDataStore } from '@/stores/keycloakUserData'
+import { fetchAlumnos, deployTienda } from '@/services/MinioService';
+import * as XLSX from 'xlsx'
+import { saveAs } from 'file-saver'
+import { useUserDataStore, useNotasStore } from '@/stores/keycloakUserData'
 import AddUserModal from '@/components/AddUserModal.vue'
 import EditUserModal from '@/components/EditUserModal.vue'
 import DeleteUserModal from '@/components/DeleteUserModal.vue';
@@ -87,6 +91,7 @@ const showEditModal = ref(false)
 const userToDelete = ref([]);
 const userToEdit = ref(null);
 const uploadedFiles = ref([])
+const notasStore = useNotasStore()
 
 const paginationOptions = reactive({
   page: 1,
@@ -218,6 +223,44 @@ onMounted(async () => {
   }
 });
 
+function exportNotasExcel(usuarios) {
+  const dataExcel = usuarios.map(a => ({
+    Nombre: a.firstName,
+    Apellidos: a.lastName,
+    Matricula: a.username,
+    Email: a.email,
+    Rol: a.rol,
+    AñoAcademico: a.añoAcademico,
+    Nota: notasStore.getNota(a.username) || ''
+  }))
+
+  const ws = XLSX.utils.json_to_sheet(dataExcel)
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, 'Notas')
+
+  const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' })
+  const blob = new Blob([excelBuffer], { type: 'application/octet-stream' })
+  saveAs(blob, 'SCE listado alumnos.xlsx')
+}
+
+function downloadExcel() {
+  exportNotasExcel(data.value)
+}
+
+function encontrarTiendaEnHtdocs(nombreArchivoSubido) {
+  const HTDOCS_DIR = 'C:\\xampp\\htdocs';
+  
+  const baseName = path.basename(nombreArchivoSubido, path.extname(nombreArchivoSubido)).toLowerCase();
+
+  const dirs = fs.readdirSync(HTDOCS_DIR, { withFileTypes: true })
+    .filter(d => d.isDirectory())
+    .map(d => d.name.toLowerCase());
+
+  const tiendaExistente = dirs.find(d => d === baseName);
+
+  return tiendaExistente || null;
+}
+
 const fetchArchivoSubidoUsuarioActual = async (usuariosTransformados) => {
   const usuarioActual = usuariosTransformados.find(user => user.username === userStore.username);
   console.log("user actual es: ", usuarioActual)
@@ -247,7 +290,9 @@ const fetchArchivoSubidoUsuarioActual = async (usuariosTransformados) => {
       } catch (err) {
         return {
           ...user,
-          archivoSubido: false
+          bucketName,
+          archivoSubido: false,
+          files: res.data.files || []
         };
       }
     })
@@ -373,29 +418,26 @@ const columns = [
       title: "Valoración",
       key: "valoracion",
       width: 200,
-      defaultFilterOptionValues: [],
-      filterOptions: [
-        { label: "⭐", value: 1 },
-        { label: "⭐⭐", value: 2 },
-        { label: "⭐⭐⭐", value: 3 },
-        { label: "⭐⭐⭐⭐", value: 4 },
-        { label: "⭐⭐⭐⭐⭐", value: 5 },
-      ],
+      filterOptions: Array.from({ length: 10 }, (_, i) => ({
+        label: (i + 1).toString(),
+        value: i + 1
+      })),
       filter(value, row) {
-        return row.valoracion === value
+        return notasStore.getNota(row.username) === value
       },
       render(row) {
-        return h(NRate, {
-          value: row.valoracion,
-          readonly: true,
-          allowHalf: true,
-          count: 5,
+        return h(NInputNumber, {
+          value: notasStore.getNota(row.username),
+          min: 1,
+          max: 10,
+          step: 1,
           onUpdateValue: (newValue) => {
-            row.valoracion = newValue;  
+            notasStore.setNota(row.username, newValue)
           }
-        });
+        })
       }
     }
+
 ];
 
 const props = defineProps({
@@ -410,11 +452,33 @@ const handleCheck = (rowKeys) => {
   checkedRowKeysRef.value = rowKeys;
 };
 
-const openViewModal = (row) => {
-  const nombreTienda = 'tiendaCE'; // o genera dinámicamente si tienes varios
-  viewTiendaUrl.value = `https://localhost/${nombreTienda}/`; // URL de la tienda que quieres mostrar
-  showViewModal.value = true;
-}
+const generarNombreTienda = (user) => {
+  const nombre = user.firstName.trim().split(' ')[0][0].toLowerCase(); // primera letra del primer nombre
+  const apellidos = user.lastName
+    .trim()
+    .split(' ')
+    .map(a => a[0].toLowerCase()) // primera letra de cada apellido
+    .join('');
+  
+  return `ce_${nombre}${apellidos}`;
+};
+
+const openViewModal = async (row) => {
+  try {
+    // Generar nombre de tienda desde el usuario
+    const nombreArchivo = generarNombreTienda(row);
+
+    const res = await axios.get(`http://localhost:3000/tienda/${nombreArchivo}`);
+    const tiendaExistente = res.data.tienda;
+
+    viewTiendaUrl.value = `http://localhost/${tiendaExistente}/`;
+    showViewModal.value = true;
+  } catch (err) {
+    alert('No se encontró la tienda desplegada en htdocs.');
+  }
+};
+
+
 
 
 const deleteUser = (user) => {

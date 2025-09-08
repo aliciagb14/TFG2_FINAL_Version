@@ -468,10 +468,26 @@ const openViewModal = async (row) => {
     // Generar nombre de tienda desde el usuario
     const nombreArchivo = generarNombreTienda(row);
 
+    const resDB = await axios.post(
+        `http://localhost:3000/deploy-db`,
+        { nombreArchivo },
+        {
+          headers: {
+            Authorization: `Bearer ${userStore.token}`
+          }
+        }
+      );
+    if (!resDB.data.success) {
+      alert('No se pudo crear o importar la base de datos.');
+      return;
+    }
+
+    // 2️⃣ Verificar que la tienda exista
     const res = await axios.get(`http://localhost:3000/tienda/${nombreArchivo}`);
     const tiendaExistente = res.data.tienda;
-
-    viewTiendaUrl.value = `http://localhost/${tiendaExistente}/`;
+    console.log("TIENDA EXISTENTE: ", tiendaExistente)
+    // 3️⃣ Mostrar la tienda
+    viewTiendaUrl.value = `https://localhost/${tiendaExistente}/`;
     showViewModal.value = true;
   } catch (err) {
     alert('No se encontró la tienda desplegada en htdocs.');

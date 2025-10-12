@@ -59,7 +59,8 @@
               <n-icon size="20" :component="CloudUploadOutline" />
             </template>
             <n-thing>
-              <template #header>{{ file }}</template>
+              <template #header>{{ uploadedFiles.value }}</template>
+              <h2> Archivo subido: {{ String(file) }}</h2>
               <template #description>
                 <n-button
                   size="small"
@@ -80,15 +81,23 @@
 </template>
 
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { NUpload, NUploadDragger, NCard, NButton, NListItem, NList, NIcon, NThing, NText } from 'naive-ui';
 import { CloudUploadOutline } from '@vicons/ionicons5';
 import axios from 'axios';
 import { useMessage } from 'naive-ui';
 import { getUsers } from '@/services/UserService'
 import { useUserDataStore } from '@/stores/keycloakUserData'
+const props = defineProps({
+  bucketName: String,
+  allowAllFiles: {
+    type: Boolean,
+    default: false   // false → usa restricciones, true → permite todo
+  }
+});
 
 function normalizeBucketName(name) {
+  if (!name || typeof name !== 'string') return ''; 
   return name
     .toLowerCase()
     .trim()
@@ -97,8 +106,16 @@ function normalizeBucketName(name) {
 }
 
 const userStore  = useUserDataStore();
-const bucketName = ref(userStore.bucketName || '');
-const acceptedFileTypes = userStore.isAdmin ? '.xlsx' : '.zip,.rar';
+// const bucketName = ref(userStore.bucketName || ''); PROFESOR
+//   bucketName = computed(() => props.bucketName);  ALUMNO
+ 
+let bucketName = ref('');
+
+const acceptedFileTypes = computed(() => {
+  if (props.allowAllFiles) return ''; // sin restricción
+  return userStore.isAdmin ? '.xlsx' : '.zip,.rar';
+});
+
 const nMessage = useMessage();
 
 const uploadRef = ref(null);
@@ -108,24 +125,67 @@ const message = ref('');
 const messageType = ref('');
 const uploadedFiles = ref([]);
 
+import { useRoute, useRouter } from 'vue-router';
+const router = useRouter();
+const route = useRoute();
+
+// Detectar el origen del componente
 onMounted(async () => {
-  if (!bucketName.value) {
-    try {
-      const users = await getUsers();
-      const generated = generateBucketName(users);
-      if (generated) {
-        bucketName.value = generated;
-        userStore.setBucketName(generated);
+  // Si Upload se abre desde ListUsers (es decir, se pasó bucketName por props)
+  if (props.bucketName) {
+    console.log("[Upload] Abierto desde ListUsers con bucket:", props.bucketName);
+    bucketName.value = props.bucketName;
+  } 
+  // Si se abre directamente desde el menú (ej: /files)
+  else {
+    console.log("[Upload] Abierto desde el sidebar (/files) usando bucket del profesor");
+    bucketName.value = userStore.bucketName || '';
+
+    // Si el store aún no tiene bucketName, lo generamos
+    if (!bucketName.value) {
+      try {
+        const users = await getUsers();
+        const generated = generateBucketName(users);
+        if (generated) {
+          bucketName.value = generated;
+          userStore.setBucketName(generated);
+        }
+      } catch (err) {
+        console.error("Error al generar bucketName en Upload.vue", err);
       }
-    } catch (err) {
-      console.error("Error al generar bucketName en Upload.vue", err);
     }
   }
-  uploadedFiles.value  = await fetchUploadedFiles();
-  if (userStore.isAdmin && uploadedFiles.length > 0) {
-    router.push({ path: '/files', query: { bucket: bucketName.value, file: uploadedFiles[0] } });
+
+  // Una vez definido el bucket, cargamos los ficheros
+  uploadedFiles.value = await fetchUploadedFiles();
+
+  // Si vienes desde /files (profesor), mostrar el primer archivo si existe
+  if (route.path === '/files' && userStore.isAdmin && uploadedFiles.value.length > 0) {
+    router.push({ 
+      path: '/files', 
+      query: { bucket: bucketName.value, file: uploadedFiles.value[0] } 
+    });
   }
 });
+
+// onMounted(async () => {
+//   if (!bucketName.value) {
+//     try {
+//       const users = await getUsers();
+//       const generated = generateBucketName(users);
+//       if (generated) {
+//         bucketName.value = generated;
+//         userStore.setBucketName(generated);
+//       }
+//     } catch (err) {
+//       console.error("Error al generar bucketName en Upload.vue", err);
+//     }
+//   }
+//   uploadedFiles.value  = await fetchUploadedFiles();
+//   if (userStore.isAdmin && uploadedFiles.length > 0) {
+//     router.push({ path: '/files', query: { bucket: bucketName.value, file: uploadedFiles[0] } });
+//   }
+// });
 
 watch(() => userStore.bucketName, async (newVal) => {
   if (newVal) {
@@ -160,18 +220,32 @@ const handleUpload = async () => {
   if (files.value.length === 0) return;
 
   for (const file of files.value) {
-    if (userStore.isAdmin && !file.file.name.endsWith('.xlsx')) {
-      message.value = 'Admins solo pueden subir archivos .xlsx';
-      messageType.value = 'error';
-      nMessage.error(message.value);
-      return;
+    if (!props.allowAllFiles) {
+      if (userStore.isAdmin && !file.file.name.endsWith('.xlsx')) {
+        message.value = 'Solo se permiten archivos .xlsx en el bucket del profesor';
+        messageType.value = 'error';
+        nMessage.error(message.value);
+        return;
+      }
+      if (!userStore.isAdmin && !(file.file.name.endsWith('.zip') || file.file.name.endsWith('.rar'))) {
+        message.value = 'Alumnos solo pueden subir archivos .zip o .rar';
+        messageType.value = 'error';
+        nMessage.error(message.value);
+        return;
+      }
     }
-    if (!userStore.isAdmin && !(file.file.name.endsWith('.zip') || file.file.name.endsWith('.rar'))) {
-      message.value = 'Alumnos solo pueden subir archivos .zip o .rar';
-      messageType.value = 'error';
-      nMessage.error(message.value);
-      return;
-    }
+    // if (userStore.isAdmin && !file.file.name.endsWith('.xlsx')) {
+    //   message.value = 'Admins solo pueden subir archivos .xlsx';
+    //   messageType.value = 'error';
+    //   nMessage.error(message.value);
+    //   return;
+    // }
+    // if (!userStore.isAdmin && !(file.file.name.endsWith('.zip') || file.file.name.endsWith('.rar'))) {
+    //   message.value = 'Alumnos solo pueden subir archivos .zip o .rar';
+    //   messageType.value = 'error';
+    //   nMessage.error(message.value);
+    //   return;
+    // }
   }
 
   uploading.value = true;
@@ -217,7 +291,7 @@ const fetchUploadedFiles = async () => {
     console.log("Buscando ficheros en: ", bucketName.value)
     const normalizedBucket = normalizeBucketName(bucketName.value);
     console.log("Buscando ficheros tras transformar bucket en: ", normalizedBucket)
-
+ 
     const res = await axios.get(`http://localhost:3000/bucket-files/${normalizedBucket}`, {
       headers: {
         Authorization: `Bearer ${userStore.token}`

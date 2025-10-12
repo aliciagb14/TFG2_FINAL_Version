@@ -49,25 +49,52 @@
     @update:show="showDeleteModal = $event"
     @deleteUser="handleDeleteUser"
   />
-  <n-modal v-model:show="showViewModal" title="Vista previa de la tienda" >
+  <n-modal v-model:show="showViewModal" class="prestashop-style" title="Vista previa de la tienda" >
+    <template #header>
+      <div class="modal-header">
+        <span class="modal-title">Vista previa de la tienda</span>
+        <n-button
+          quaternary
+          size="small"
+          @click="showViewModal = false"
+          class="close-btn"
+        >
+          ✕
+        </n-button>
+      </div>
+    </template>
     <iframe
       :src="viewTiendaUrl"
-      style="width: 100%; height: 70vh; border: none;"
+      class="prestashop-iframe"
       sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
     ></iframe>
   </n-modal>
+
+  <n-modal v-model:show="showUploadModal" title="Subir archivos">
+    <template #header>
+      <div class="modal-header">
+        <span class="modal-title">Subir archivos para {{ userToUpload?.firstName }} {{ userToUpload?.lastName }}</span>
+        <n-button quaternary size="small" @click="showUploadModal = false">✕</n-button>
+      </div>
+    </template>
+
+    <Upload :bucketName="computedBucketName" :allowAllFiles="true" />
+  </n-modal>
+
 
 </template>
 
 <script setup>
 import { ref, onMounted, h, watch, computed, reactive } from 'vue';
 import axios from 'axios';
+import Upload from '@/components/Upload.vue'
 import { NDataTable, NIcon, NButton, NDatePicker, NRate, NModal, NInputNumber } from 'naive-ui';
 import { getUsers, createUserKeycloak, deleteUserKeycloak } from '@/services/UserService';
 import { PersonAddSharp as AddUserIcon, 
         CloseCircleOutline as DeleteUserIcon, 
         CreateOutline as EditUserIcon,
-        EyeOutline as ViewIcon 
+        EyeOutline as ViewIcon,
+        ArrowUpOutline as UploadIcon
       } from '@vicons/ionicons5';
 import { fetchAlumnos, deployTienda } from '@/services/MinioService';
 import * as XLSX from 'xlsx'
@@ -93,6 +120,9 @@ const userToEdit = ref(null);
 const uploadedFiles = ref([])
 const notasStore = useNotasStore()
 
+const showUploadModal = ref(false)
+const userToUpload = ref(null)
+
 const paginationOptions = reactive({
   page: 1,
   pageSize: 5,
@@ -109,6 +139,19 @@ const paginationOptions = reactive({
     paginationOptions.page = 1;
   }
 });
+
+const openUploadModal = (user) => {
+  userToUpload.value = user
+  console.log("user q abri para bucket: ", userToUpload.value)
+  showUploadModal.value = true
+}
+
+const computedBucketName = computed(() => {
+  if (!userToUpload.value) return ''
+  const apellidos = userToUpload.value.lastName.replace(/\s+/g, '')
+  const nombre = userToUpload.value.firstName.trim()
+  return normalizeBucketName(`${apellidos},${nombre}`)
+})
 
 const normalizeBucketName = (name) => {
   return name
@@ -394,6 +437,16 @@ const columns = [
           NButton,
           {
             size: 'small',
+            type: 'success',
+            onClick: () => openUploadModal(row),
+            title: 'Subir archivos',
+          },
+          { default: () => h(NIcon, () => h(UploadIcon)) }
+        ),
+        h(
+          NButton,
+          {
+            size: 'small',
             type: 'warning',
             onClick: () => editUser(row),
           },
@@ -487,14 +540,12 @@ const openViewModal = async (row) => {
     const tiendaExistente = res.data.tienda;
     console.log("TIENDA EXISTENTE: ", tiendaExistente)
     // 3️⃣ Mostrar la tienda
-    viewTiendaUrl.value = `https://localhost/${tiendaExistente}/`;
+    viewTiendaUrl.value = `http://localhost/${tiendaExistente}/`;
     showViewModal.value = true;
   } catch (err) {
     alert('No se encontró la tienda desplegada en htdocs.');
   }
 };
-
-
 
 
 const deleteUser = (user) => {
@@ -667,5 +718,41 @@ watch(showModal, (newVal) => {
   display: flex;
   flex-direction: column;
 }
+
+.prestashop-style {
+  width: 95vw !important;
+  max-width: 95vw !important;
+  height: 95vh !important;
+  padding: 0 !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+
+.prestashop-iframe {
+  width: 100%;
+  height: calc(95vh - 50px); /* resta espacio del header del modal */
+  border: none;
+  flex-grow: 1; /* asegura que el iframe rellene el modal */
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.modal-title {
+  font-weight: bold;
+  font-size: 1.1rem;
+}
+
+.close-btn {
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
 
 </style>

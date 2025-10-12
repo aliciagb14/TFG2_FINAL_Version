@@ -8,10 +8,9 @@ const mysql = require('mysql2/promise');
 const path = require('path');
 const fs = require('fs');
 const fsExtra = require('fs-extra');
-const { exec } = require('child_process');
+const { spawn  } = require('child_process');
 const AdmZip = require('adm-zip');
-const Unrar = require('node-unrar-js');
-
+const { createExtractorFromData } = require('node-unrar-js');
 
 const HTDOCS_DIR = "C:\\xampp\\htdocs";
 
@@ -182,77 +181,111 @@ function findFileRecursive(dir, regex) {
 //     if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
 //     const rawBucketName = req.params.bucketName || req.body.bucketName;
-//     console.log("bucketName", rawBucketName);
+//     console.log("📦 Bucket:", rawBucketName);
 
+//     // Crear bucket si no existe
 //     const exists = await minioClient.bucketExists(rawBucketName);
 //     if (!exists) {
 //       await minioClient.makeBucket(rawBucketName);
 //       console.log(`✅ Bucket ${rawBucketName} creado`);
 //     }
-//     const filePath = req.file.path; //new
-//     const originalName = req.file.originalname; //new
-//     const fileExt = path.extname(originalName).toLowerCase(); //new
 
-//     // const fileExt = path.extname(req.file.originalname).toLowerCase(); //old
-//      if (fileExt === '.zip') {
-//       // const filePath = req.file.path; //old
-//       const tmpExtractPath = path.join(TMP_DIR, path.basename(filePath, '.zip'));
-//       fs.mkdirSync(tmpExtractPath, { recursive: true });
+//     const filePath = req.file.path;
+//     const originalName = req.file.originalname;
+//     const fileExt = path.extname(originalName).toLowerCase();
 
-//       const mainZip = new AdmZip(filePath);
-//       mainZip.extractAllTo(tmpExtractPath, true);
-
-//       const tiendaZipPath = findFileRecursive(tmpExtractPath, /^ce_[a-z]{3}\.zip$/i);
-//       const sqlPathInitial = findFileRecursive(tmpExtractPath, /^ce_[a-z]{3}_db\.sql(\.zip)?$/i);
-
-//       if (tiendaZipPath && sqlPathInitial) {
-//         const nombreTienda = path.basename(tiendaZipPath, '.zip');
-//         const targetDir = path.join(HTDOCS_DIR, nombreTienda);
-//         const sqlTargetPath = path.join(HTDOCS_DIR, path.basename(sqlPathInitial));
-
-//         if (fs.existsSync(targetDir)) {
-//           console.log(` Eliminando carpeta previa de ${nombreTienda}`);
-//           fsExtra.removeSync(targetDir);
-//         }
-
-//         fs.copyFileSync(sqlPathInitial, sqlTargetPath);
-//         console.log(' SQL ZIP copiado a htdocs:', sqlTargetPath);
-
-//         const tiendaZip = new AdmZip(tiendaZipPath);
-//         tiendaZip.extractAllTo(targetDir, true);
-
-//         const nestedDir = path.join(targetDir, nombreTienda);
-//         if (fs.existsSync(nestedDir)) {
-//           console.log(`📂 Corrigiendo carpeta duplicada: ${nestedDir}`);
-//           const files = fs.readdirSync(nestedDir);
-//           for (const file of files) {
-//             fs.renameSync(
-//               path.join(nestedDir, file),
-//               path.join(targetDir, file)
-//             );
-//           }
-//           fs.rmdirSync(nestedDir, { recursive: true });
-//         }
-
-//         console.log(`🚀 Tienda ${nombreTienda} desplegada en htdocs`);
-//       }
+//     // Solo procesamos ZIP principal del alumno
+//     console.log("extract user: ", req.user)
+//     let allowedExtensions = ['.zip', '.rar']; // por defecto para alumnos
+//     if (req.user && req.user.roles.includes('admin')) {
+//       allowedExtensions.push('.xlsx');
 //     }
 
-//     // Subir archivo al bucket en MinIO (funciona para cualquier archivo)
+//     if (!allowedExtensions.includes(fileExt)) {
+//       return res.status(400).json({ message: `Solo se permiten archivos: ${allowedExtensions.join(', ')}` });
+//     }
+
+//     // Crear carpeta temporal
+//     const tempFolder = path.join(TMP_DIR, path.basename(filePath, fileExt));
+//     fs.mkdirSync(tempFolder, { recursive: true });
+
+//     // Extraer el ZIP principal del alumno
+//     if (fileExt === '.zip' || fileExt === '.rar') {
+//       if (fileExt === '.zip') {
+//         const alumnoZip = new AdmZip(filePath);
+//         alumnoZip.extractAllTo(tempFolder, true);
+//         console.log(`📂 ZIP del alumno extraído en: ${tempFolder}`);
+//       } else {
+//         console.log(`📂 RAR del alumno extraído en: ${tempFolder}`);
+//         await descomprimirRAR(filePath, tempFolder);
+//       }
+//       // Buscar ce_XXX.zip y ce_XXX_db.sql.zip dentro del ZIP del alumno
+//       const tiendaZipPath = findFileRecursive(tempFolder, /^ce_[a-z]{2,3}(_[a-z0-9]+)?\.(zip|rar)$/i);
+//       const sqlZipPath = findFileRecursive(tempFolder, /^ce_[a-z]{2,3}_(bd|db)\.sql(_[a-z0-9]+)?(\.zip)?$/i);
+//       console.log("tiendaZipPath: ", tiendaZipPath)
+//       console.log("sqlzipPath: ", sqlZipPath)
+//       if (!tiendaZipPath || !sqlZipPath) {
+//         return res.status(400).json({
+//           message: 'No se encontraron los archivos ce_XXX.zip o ce_XXX_db.sql.zip dentro del ZIP del alumno.'
+//         });
+//       }
+
+//       const nombreTienda = path.basename(tiendaZipPath)
+//                           .replace(/\.(zip|rar)$/i, '')
+//                           .replace(/_[a-z0-9]+$/i, '');
+//       const destinoTienda = path.join(HTDOCS_DIR, nombreTienda);
+//       const destinoSQL = path.join(HTDOCS_DIR, path.basename(sqlZipPath));
+
+//       const tempExtract = path.join(TMP_DIR, `extract_${nombreTienda}`);
+//       fsExtra.ensureDirSync(tempExtract);
+//       // Si la tienda ya existe, la mantenemos (no sobrescribimos)
+//       if (fs.existsSync(destinoTienda)) {
+//         console.warn(`⚠️ La tienda ${nombreTienda} ya existe en htdocs, se mantendrá sin sobrescribir`);
+//       } else {
+//         // Extraer la tienda en htdocs
+//         const tiendaExt = path.extname(tiendaZipPath).toLowerCase();
+//         if (tiendaExt === '.zip') {
+//             const tiendaZip = new AdmZip(tiendaZipPath);
+//             tiendaZip.extractAllTo(destinoTienda, true);
+//             console.log(`✅ Tienda ${nombreTienda} descomprimida en ${destinoTienda}`);
+//         } else if (tiendaExt === '.rar') {
+//             await descomprimirRAR(tiendaZipPath, tempExtract);
+//             console.log(`✅ Tienda ${nombreTienda} descomprimida (RAR) en ${destinoTienda}`);
+//         }
+//       }
+      
+//       // Mover solo el contenido de la carpeta interna (ce_ja) a destinoTienda
+//       const innerFolder = fs.readdirSync(tempExtract).find(f => f.toLowerCase().startsWith('ce_'));
+//       if (!fs.existsSync(destinoTienda)) fs.mkdirSync(destinoTienda, { recursive: true });
+
+//       const innerPath = path.join(tempExtract, innerFolder);
+//       fsExtra.copySync(innerPath, destinoTienda, { overwrite: true });
+//       // Copiar el ZIP SQL a htdocs si no existe
+//       if (!fs.existsSync(destinoSQL)) {
+//         fs.copyFileSync(sqlZipPath, destinoSQL);
+//         console.log(`✅ Copiado ${path.basename(sqlZipPath)} a htdocs`);
+//       }
+
+      
+//       // Limpieza temporal
+//       await fsExtra.remove(tempFolder);  
+//     }
+//     // Subir el ZIP original a MinIO
 //     const fileStream = fs.createReadStream(req.file.path);
 //     const stat = fs.statSync(req.file.path);
-//     await minioClient.putObject(rawBucketName, req.file.originalname, fileStream, stat.size);
+//     await minioClient.putObject(rawBucketName, originalName, fileStream, stat.size);
 //     fs.unlinkSync(req.file.path);
-
-//     res.json({
+        
+//      res.json({
 //       success: true,
-//       message: 'Archivo subido',
-//       bucket: rawBucketName,
-//       file: req.file.originalname
+//       message: fileExt === '.zip' ? 
+//         `Tienda ${path.basename(originalName, '.zip')} desplegada correctamente en htdocs` :
+//         `Archivo ${originalName} subido correctamente al bucket`,
+//       tienda: fileExt === '.zip' ? path.basename(originalName, '.zip') : null,
+//       url: fileExt === '.zip' ? `http://localhost/${path.basename(originalName, '.zip')}/` : null,
 //     });
-
 //   } catch (err) {
-//     console.error(err);
+//     console.error("❌ Error en upload:", err);
 //     res.status(500).json({ message: 'Error en subida', error: err.message });
 //   }
 // });
@@ -275,22 +308,19 @@ app.post('/upload/:bucketName', extractUser, upload.single('file'), async (req, 
     const originalName = req.file.originalname;
     const fileExt = path.extname(originalName).toLowerCase();
 
-    // Solo procesamos ZIP principal del alumno
-    console.log("extract user: ", req.user)
-    let allowedExtensions = ['.zip']; // por defecto para alumnos
-    if (req.user && req.user.roles.includes('admin')) {
-      allowedExtensions.push('.xlsx');
-    }
+    // Permisos según rol
+    let allowedExtensions = ['.zip', '.rar'];
+    if (req.user && req.user.roles.includes('admin')) allowedExtensions.push('.xlsx');
 
     if (!allowedExtensions.includes(fileExt)) {
       return res.status(400).json({ message: `Solo se permiten archivos: ${allowedExtensions.join(', ')}` });
     }
 
-    // Crear carpeta temporal
-    const tempFolder = path.join(TMP_DIR, path.basename(filePath, '.zip'));
+    // Carpeta temporal para extracción
+    const tempFolder = path.join(TMP_DIR, path.basename(filePath, fileExt));
     fs.mkdirSync(tempFolder, { recursive: true });
 
-    // Extraer el ZIP principal del alumno
+    // Extraer ZIP o RAR del alumno
     if (fileExt === '.zip') {
       const alumnoZip = new AdmZip(filePath);
       alumnoZip.extractAllTo(tempFolder, true);
@@ -300,52 +330,61 @@ app.post('/upload/:bucketName', extractUser, upload.single('file'), async (req, 
       await descomprimirRAR(filePath, tempFolder);
     }
 
-    // Buscar ce_XXX.zip y ce_XXX_db.sql.zip dentro del ZIP del alumno
-    const tiendaZipPath = findFileRecursive(tempFolder, /^ce_[a-z]{3}\.zip$/i);
-    const sqlZipPath = findFileRecursive(tempFolder, /^ce_[a-z]{3}_(bd|db)\.sql(\.zip)?$/i);
-    console.log("tiendaZipPath: ", tiendaZipPath)
-    console.log("sqlzipPath: ", sqlZipPath)
+    // Buscar archivos internos
+    const tiendaZipPath = findFileRecursive(tempFolder, /^ce_[a-z]{2,3}(_[a-z0-9]+)?\.(zip|rar)$/i);
+    const sqlZipPath = findFileRecursive(tempFolder, /^ce_[a-z]{2,3}_(bd|db)\.sql(_[a-z0-9]+)?(\.zip)?$/i);
+
     if (!tiendaZipPath || !sqlZipPath) {
-      return res.status(400).json({
-        message: 'No se encontraron los archivos ce_XXX.zip o ce_XXX_db.sql.zip dentro del ZIP del alumno.'
-      });
+      return res.status(400).json({ message: 'No se encontraron los archivos ce_XXX.zip/rar o ce_XXX_db.sql.zip' });
     }
 
-    const nombreTienda = path.basename(tiendaZipPath, '.zip');
+    const nombreTienda = path.basename(tiendaZipPath).replace(/\.(zip|rar)$/i, '').replace(/_[a-z0-9]+$/i, '');
     const destinoTienda = path.join(HTDOCS_DIR, nombreTienda);
     const destinoSQL = path.join(HTDOCS_DIR, path.basename(sqlZipPath));
 
-    // Si la tienda ya existe, la mantenemos (no sobrescribimos)
-    if (fs.existsSync(destinoTienda)) {
-      console.warn(`⚠️ La tienda ${nombreTienda} ya existe en htdocs, se mantendrá sin sobrescribir`);
-    } else {
-      // Extraer la tienda en htdocs
+    const tempExtract = path.join(TMP_DIR, `extract_${nombreTienda}`);
+    fsExtra.ensureDirSync(tempExtract);
+
+    // Extraer tienda en carpeta temporal
+    const tiendaExt = path.extname(tiendaZipPath).toLowerCase();
+    if (tiendaExt === '.zip') {
       const tiendaZip = new AdmZip(tiendaZipPath);
-      tiendaZip.extractAllTo(destinoTienda, true);
-      console.log(`✅ Tienda ${nombreTienda} descomprimida en ${destinoTienda}`);
+      tiendaZip.extractAllTo(tempExtract, true);
+    } else if (tiendaExt === '.rar') {
+      await descomprimirRAR(tiendaZipPath, tempExtract);
     }
 
-    // Copiar el ZIP SQL a htdocs si no existe
+    // Mover solo el contenido de la carpeta interna a destinoTienda
+    const innerFolder = fs.readdirSync(tempExtract).find(f => f.toLowerCase().startsWith('ce_'));
+    if (!innerFolder) throw new Error('No se encontró la carpeta interna ce_XXX en el ZIP/RAR');
+    const innerPath = path.join(tempExtract, innerFolder);
+    fsExtra.ensureDirSync(destinoTienda);
+    fsExtra.copySync(innerPath, destinoTienda, { overwrite: true });
+    console.log(`✅ Tienda ${nombreTienda} desplegada correctamente en ${destinoTienda}`);
+
+    // Copiar SQL
     if (!fs.existsSync(destinoSQL)) {
       fs.copyFileSync(sqlZipPath, destinoSQL);
       console.log(`✅ Copiado ${path.basename(sqlZipPath)} a htdocs`);
     }
 
-    // Subir el ZIP original a MinIO
+    // Limpieza temporal
+    await fsExtra.remove(tempFolder);
+    await fsExtra.remove(tempExtract);
+
+    // Subir ZIP/RAR original a MinIO
     const fileStream = fs.createReadStream(req.file.path);
     const stat = fs.statSync(req.file.path);
     await minioClient.putObject(rawBucketName, originalName, fileStream, stat.size);
     fs.unlinkSync(req.file.path);
 
-    // Limpieza temporal
-    await fsExtra.remove(tempFolder);
-
     res.json({
       success: true,
-      message: `Tienda ${nombreTienda} desplegada correctamente en htdocs`,
-      tienda: nombreTienda,
-      url: `http://localhost/${nombreTienda}/`,
-      sqlZip: path.basename(sqlZipPath),
+      message: fileExt === '.zip' ? 
+        `Tienda ${nombreTienda} desplegada correctamente en htdocs` :
+        `Archivo ${originalName} subido correctamente al bucket`,
+      tienda: fileExt === '.zip' ? nombreTienda : null,
+      url: fileExt === '.zip' ? `http://localhost/${nombreTienda}/` : null,
     });
 
   } catch (err) {
@@ -353,6 +392,7 @@ app.post('/upload/:bucketName', extractUser, upload.single('file'), async (req, 
     res.status(500).json({ message: 'Error en subida', error: err.message });
   }
 });
+
 
 
 app.get('/tienda/:nombreArchivo', (req, res) => {
@@ -1023,63 +1063,71 @@ app.get('/bucket-file/:bucketName/:filename', async (req, res) => {
 // });
 
 
-// Funciones auxiliares (agregar al final del archivo del servidor)
 async function descomprimirRAR(archivoPath, destino) {
-  let rarExtraido = false;
+  console.log("📦 Intentando descomprimir RAR...");
 
+  // Intentar primero con 7-Zip
   try {
-    console.log("📦 Intentando descomprimir RAR con 7-Zip...");
-    const { spawn } = require('child_process');
-    
-    const sevenZipPaths = [
-      'C:\\Program Files\\7-Zip\\7z.exe',
-      'C:\\Program Files (x86)\\7-Zip\\7z.exe',
-      '7z'
-    ];
+    await new Promise((resolve, reject) => {
+      const sevenZip = spawn('7z', ['x', '-y', `-o${destino}`, archivoPath], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true
+      });
 
-    for (const sevenZipPath of sevenZipPaths) {
-      try {
-        await new Promise((resolve, reject) => {
-          const sevenZip = spawn(sevenZipPath, [
-            'x', '-y', `-o${destino}`, archivoPath
-          ], { 
-            stdio: ['pipe', 'pipe', 'pipe'],
-            windowsHide: true 
-          });
-          
-          sevenZip.on('close', (code) => {
-            if (code === 0) {
-              console.log("✅ RAR descomprimido con 7-Zip");
-              resolve();
-            } else {
-              reject(new Error(`7-Zip falló con código: ${code}`));
-            }
-          });
-          
-          sevenZip.on('error', (err) => {
-            reject(new Error(`Error ejecutando 7-Zip: ${err.message}`));
-          });
-          
-          setTimeout(() => {
-            sevenZip.kill();
-            reject(new Error('Timeout con 7-Zip'));
-          }, 180000);
-        });
-        
-        rarExtraido = true;
-        break;
-        
-      } catch (sevenZipError) {
-        console.warn(`⚠️ 7-Zip en ${sevenZipPath} falló:`, sevenZipError.message);
-        continue;
+      sevenZip.stdout.on('data', (data) => process.stdout.write(data));
+      sevenZip.stderr.on('data', (data) => process.stderr.write(data));
+
+      sevenZip.on('close', (code) => {
+        if (code === 0) {
+          console.log("✅ RAR descomprimido correctamente con 7-Zip en:", destino);
+          resolve();
+        } else {
+          reject(new Error(`7-Zip falló con código: ${code}`));
+        }
+      });
+
+      sevenZip.on('error', (err) => {
+        reject(new Error(`Error ejecutando 7-Zip: ${err.message}`));
+      });
+    });
+
+    return; // ✅ Éxito, no continuar a fallback
+  } catch (err) {
+    console.warn("⚠️ Falló 7-Zip, intentando con node-unrar-js:", err.message);
+  }
+
+  // Fallback: node-unrar-js (para entornos sin 7z o errores de compatibilidad)
+  try {
+    console.log("📦 Descomprimiendo RAR con node-unrar-js...");
+    const data = fs.readFileSync(archivoPath);
+    const extractor = await createExtractorFromData({ data });
+
+    const listResult = extractor.getFileList();
+    if (listResult.state !== "SUCCESS") {
+      throw new Error("No se pudo leer el contenido del RAR");
+    }
+
+    const extractResult = extractor.extract();
+    if (extractResult.state !== "SUCCESS") {
+      throw new Error("Fallo al extraer los archivos del RAR");
+    }
+
+    for (const file of extractResult.files) {
+      let relativePath = file.fileHeader.name.replace(/\\/g, '/');
+      relativePath = relativePath.replace(/^ce_[a-z]{2,3}\//i, '');
+
+      const filePath = path.join(destino, relativePath);
+
+      const dir = path.dirname(filePath);
+      fs.mkdirSync(dir, { recursive: true });
+      if (file.extraction) {
+        fs.writeFileSync(filePath, Buffer.from(file.extraction));
       }
     }
-    
-    if (!rarExtraido) {
-      throw new Error("7-Zip no encontrado o falló");
-    }
-    
+
+    console.log("✅ RAR descomprimido correctamente con node-unrar-js en:", destino);
   } catch (error) {
+    console.error("❌ Error al descomprimir RAR:", error);
     throw new Error(`No se pudo descomprimir el archivo RAR: ${error.message}`);
   }
 }
@@ -1099,7 +1147,7 @@ function buscarArchivosRecursivo(directorio, profundidad = 0) {
       const stat = fs.lstatSync(rutaCompleta);
 
       if (stat.isDirectory()) {
-        if (item.match(/^ce_[a-z]{3}$/i)) {
+        if (item.match(/^ce_[a-z]{2,3}$/i)) {
           console.log(`✅ Carpeta ce_* encontrada: ${item}`);
           carpetaCE = rutaCompleta;
         } else {
@@ -1115,7 +1163,7 @@ function buscarArchivosRecursivo(directorio, profundidad = 0) {
           console.log(`✅ Archivo SQL encontrado: ${item}`);
           archivoSQL = rutaCompleta;
         }
-        else if (itemLower.match(/^ce_[a-z]{3}\.zip$/)) {
+        else if (itemLower.match(/^ce_[a-z]{2,3}(_\d+)?\.zip$/)) {
           console.log(`✅ Archivo ZIP interno encontrado: ${item}`);
           archivoZipInterno = rutaCompleta;
         }

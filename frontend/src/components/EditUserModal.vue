@@ -79,3 +79,68 @@ const onPositiveClick = () => {
   closeModal();
 };
 </script>
+
+<style scoped>
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.layout {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  background-color: #a8c3ff;
+}
+
+.sidebar {
+  flex: 0 0 20%;
+  background-color: #4a4a32;
+  padding: 15px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background-color: #a8c3ff;
+}
+
+.header {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.add-user-btn {
+  font-size: 1rem;
+  color: #4a4a32;
+  cursor: pointer;
+}
+
+.table-container {
+  width: 100%;
+  background: white;
+  padding: 20px;
+  border-radius: 8px;
+  box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+.botones {
+  display: flex;               
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 20px;
+}
+</style>

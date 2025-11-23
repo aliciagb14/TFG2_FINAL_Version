@@ -13,7 +13,7 @@ services:
       - --spi-theme-cache-themes=false
       - --spi-theme-cache-templates=false
     volumes:
-      - ./keycloak-themes:/opt/keycloak/themes
+      - ./frontend/keycloak-themes:/opt/keycloak/themes
 
   minio:
     image: quay.io/minio/minio

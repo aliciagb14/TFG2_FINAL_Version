@@ -1,6 +1,10 @@
 const express = require('express');
 const cors = require('cors');
+const axios = require('axios');
+
 const multer = require('multer');
+const net = require('net');
+
 const Minio = require('minio');
 const XLSX = require('xlsx');
 const mysql = require('mysql2/promise');
@@ -28,8 +32,8 @@ const minioClient = new Minio.Client({
   endPoint: 'localhost',
   port: 9000,
   useSSL: false,
-  accessKey: '08ic8VMbfFjRuJitJk7w',
-  secretKey: 'gMFQUk6DqQOAeEGawvSmlx8NwdkFwfnXIvvo0Q3f'
+  accessKey: process.env.MINIO_ROOT_USER || 'admin',
+  secretKey: process.env.MINIO_ROOT_PASSWORD || 'admin123'
 });
 
 // Middleware para extraer user y roles del token (simplificado)
@@ -617,6 +621,62 @@ app.delete("/tienda/:nombre", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+async function getStudentCount() {
+  try {
+    const response = await axios.get('http://localhost:3001/api/users');
+    return response.data.length; // Número de usuarios
+  } catch (err) {
+    console.error('Error obteniendo usuarios de Keycloak:', err.message);
+    return 0;
+  }
+}
+
+async function getBackupCount() {
+  try {
+    const bucketName = 'backups';
+    const objectsStream = minioClient.listObjectsV2(bucketName, '', true);
+
+    let count = 0;
+    for await (const obj of objectsStream) {
+      count++;
+    }
+
+    return count;
+  } catch (err) {
+    console.error('Error contando backups en MinIO:', err.message);
+    return 0;
+  }
+}
+
+
+app.get('/system/stats', async (req, res) => {
+  const keycloakStatus = await checkPort('localhost', 8180);
+  const minioStatus = await checkPort('localhost', 9001);
+
+  res.json({
+    backendVersion: '1.0.0',
+    keycloakStatus: keycloakStatus ? 'ON' : 'OFF',
+    minioStatus: minioStatus ? 'ON' : 'OFF',
+    students: await getStudentCount(),
+    backups: await getBackupCount()
+  });
+});
+
+
+function checkPort(host, port) {
+  return new Promise(resolve => {
+    const socket = new net.Socket();
+    socket.setTimeout(1000); // 1s
+    socket.on('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.on('error', () => resolve(false));
+    socket.on('timeout', () => resolve(false));
+    socket.connect(port, host);
+  });
+}
 
 app.listen(3000, () => {
   console.log('Server started on port 3000');

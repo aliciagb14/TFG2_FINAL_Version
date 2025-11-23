@@ -6,29 +6,33 @@
       <n-grid-item v-for="(user, index) in displayedUsers" :key="user.id" :span="4">
         <n-card
           class="persona-card"
-          :class="{ animate: animateCards }"
-          :style="getAnimationStyle(index)"
           hoverable
           size="small"
           tabindex="0"
         >
-          <n-avatar
-            size="64"
-            class="avatar"
-            role="img"
-            :aria-label="`Inicial de ${user.firstName}`"
-          >
-            <span class="avatar-initial">{{ user.firstName?.charAt(0) }}</span>
-          </n-avatar>
-
-          <n-card class="card-title">{{ user.firstName }}</n-card>
-
-          <div class="card-detail email-row" v-if="user.email">
-            {{ user.email }}
+          <div class="avatar-wrapper">
+            <n-avatar
+              size="64"
+              :class="['avatar', user.rol === 'Profesor' ? 'profesor-avatar' : 'alumno-avatar']"
+              role="img"
+              :aria-label="`Inicial de ${user.firstName}`"
+            >
+              <span class="avatar-initial">{{ user.firstName?.charAt(0) }}</span>
+            </n-avatar>
           </div>
 
-          <div class="card-detail year-row">
-            Año: {{ currentYear }}
+          <div class="card-content">
+            <h3 class="card-title">{{ user.firstName }} {{ user.lastName }}</h3>
+
+            <div class="card-detail email-row" v-if="user.email">
+              <n-icon size="18"><MailOutline /></n-icon>
+              <span>{{ user.email }}</span>
+            </div>
+
+            <div class="card-detail year-row">
+              <n-icon size="18"><CalendarOutline /></n-icon>
+              <span>{{ currentYear }}</span>
+            </div>
           </div>
         </n-card>
       </n-grid-item>
@@ -38,127 +42,119 @@
 
 <script setup>
 import Sidebar from '@/components/Sidebar.vue'
-import { NAvatar, NCard, NGrid, NGridItem } from 'naive-ui'
+import { NAvatar, NCard, NGrid, NGridItem, NIcon } from 'naive-ui'
 import { ref, onMounted, computed } from 'vue'
 import { getUsers } from '@/services/UserService'
+import { MailOutline, CalendarOutline } from '@vicons/ionicons5'
 
 const usuarios = ref([])
 const currentYear = new Date().getFullYear()
 
 async function loadUsers() {
   usuarios.value = await getUsers()
-  console.log("USERS: ", usuarios.value)
 }
 
-onMounted(async () => {
-  await loadUsers()
-  console.log("USERS CARGADOS: ", usuarios.value)
-})
+onMounted(loadUsers)
 
-const displayedUsers = computed(() => {
-  console.log("displayedUsers:", usuarios.value.slice(0, 9))
-  return usuarios.value.slice(0, 9)
-})
-
-const getAnimationStyle = (index) => {
-  const count = displayedUsers.value.length || 1
-  console.log("count: ", count)
- 
-}
+const displayedUsers = computed(() => usuarios.value.slice(0, 9))
 </script>
 
 <style scoped>
 .page-title {
-  color: rgb(61, 62, 151);
-  font-weight: 300;
+  color: #182a3d;
+  font-weight: 500;
   font-size: 2.5rem;
   text-align: center;
-  margin-bottom: 1.5rem;
+  margin-bottom: 2rem;
 }
 
 .main-bg {
-  background-color: rgb(65, 56, 138);
+  background: #182a3d;
   padding: 3rem;
   border-radius: 1rem;
-  width: 80vw;
+  width: 85vw;
   margin: 0 auto;
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
 }
 
 .persona-card {
-  background-color: rgb(14, 8, 61);
-  border: 2px solid var(--color-accent, rgb(177, 169, 235));
-  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 15px;
+  padding: 1.5rem;
   text-align: center;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  min-height: 17.5rem;
-  max-width: 17.5rem;
-  margin-left: auto;
-  margin-right: auto;
-  overflow: visible;
-  transform: translateY(10px);
-  transition: opacity 0.4s ease, transform 0.3s ease;
-  transition-delay: var(--delay-opacity, 0ms);
+  flex-direction: row; /* para alinear avatar y texto */
+  align-items: center;
+  gap: 1rem;
+  transition: all 0.3s ease;
+  min-height: 6rem;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
 }
 
-.animate {
-  opacity: 1;
-  transform: translateY(0);
+.persona-card:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
 }
 
-.persona-card:hover,
-.persona-card:focus-visible {
-  transform: translateY(-0.4rem);
-  box-shadow:
-    0 6px 20px rgba(96, 98, 224, 0.4),
-    0 0 10px rgba(130, 158, 218, 0.5);
-  outline: none;
+.avatar-wrapper {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .avatar {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  font-size: 1.8rem;
-  font-weight: bold;
-  background-color: rgb(46, 37, 119);
-  color: var(--color-bg-main, #fff);
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto 1rem auto;
+  font-weight: bold;
+  font-size: 1.8rem;
+  color: #fff;
+}
+
+/* Diferenciar alumnos y profesores */
+.alumno-avatar {
+  background: linear-gradient(135deg, #6a5acd, #836fff);
+}
+
+.profesor-avatar {
+  background: linear-gradient(135deg, #ff7f50, #ffb347);
 }
 
 .avatar-initial {
   user-select: none;
 }
 
+.card-content {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
 .card-title {
-  font-weight: bold;
-  font-size: 1.1rem;
-  margin-bottom: 0.5rem;
-  color:  rgb(101, 86, 216);
+  font-weight: 600;
+  font-size: 1.2rem;
+  color: #f0ebff;
+  margin: 0 0 0.5rem 0;
 }
 
 .card-detail {
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  color: #d1cfff;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
   margin-bottom: 0.3rem;
 }
 
-.email-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.4rem;
-  color:  rgb(101, 86, 216);
-}
-
-.year-row {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 0.4rem;
-  color:  rgb(101, 86, 216);
+.email-row, .year-row {
+  font-weight: 400;
 }
 </style>

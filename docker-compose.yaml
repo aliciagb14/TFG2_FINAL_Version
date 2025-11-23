@@ -1,0 +1,33 @@
+services:
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2.0
+    container_name: ce-keycloak
+    ports:
+      - 8180:8080
+    environment:
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
+    command:
+      - start-dev
+      - --spi-theme-static-max-age=1 
+      - --spi-theme-cache-themes=false
+      - --spi-theme-cache-templates=false
+    volumes:
+      - ./keycloak-themes:/opt/keycloak/themes
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: ce-minio
+    ports:
+      - 9000:9000
+      - 9001:9001
+    environment:
+      - MINIO_ROOT_USER=admin
+      - MINIO_ROOT_PASSWORD=admin123
+    command: server /data --console-address ":9001"
+    volumes:
+    - ./minio/data:/data
+
+volumes:
+  minio-data:
+

@@ -103,3 +103,20 @@ export async function deployTienda(bucketName) {  // <-- quitar fileName
   }
 }
 
+// Obtener estadísticas del sistema (Keycloak, MinIO, backend)
+export async function getSystemStats() {
+  try {
+    const response = await axios.get('http://localhost:3000/system/stats');
+    return response.data;
+  } catch (error) {
+    console.error("Error obteniendo stats del sistema:", error.response?.data || error.message);
+    // Devuelve valores por defecto si falla
+    return {
+      backendVersion: '1.0.0',
+      keycloakStatus: 'OFF',
+      minioStatus: 'OFF',
+      students: 0,
+      backups: 0
+    };
+  }
+}

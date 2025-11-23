@@ -19,9 +19,25 @@
             <p class="card-detail"><strong>Nombre:</strong> {{ user.name }}</p>
             <p class="card-detail"><strong>Email:</strong> {{ user.email }}</p>
             <p class="card-detail"><strong>Rol:</strong> Profesor</p>
-            <n-button type="primary" @click="goToKeycloak">
+            <n-button type="primary" @click="showReset = true">
               Cambiar contraseña
             </n-button>
+
+            <!-- MODAL DE RESET -->
+            <n-modal v-model:show="showReset" title="Cambiar contraseña" closable>
+              <div style="display: flex; flex-direction: column; gap: 1rem;">
+                <n-input
+                  v-model="newPassword"
+                  type="password"
+                  placeholder="Nueva contraseña"
+                  clearable
+                />
+                <n-button type="success" @click="resetPassword">
+                  Confirmar
+                </n-button>
+              </div>
+            </n-modal>
+
           </div>
         </n-card>
 
@@ -96,9 +112,10 @@
 
 <script setup>
 import { ref, onMounted, computed } from "vue";
-import { NButton, NCard, NSwitch } from "naive-ui";
+import { NButton, NCard, NSwitch, NModal, NInput } from "naive-ui";
 import { getUsers } from '@/services/UserService'
 import { getSystemStats } from '@/services/MinioService';
+import { resetUserPassword } from '@/services/UserService';
 
 import Sidebar from "@/components/Sidebar.vue";
 import { useUserDataStore } from "@/stores/keycloakUserData";
@@ -113,19 +130,29 @@ const user = {
   isAdmin: userStore.isAdmin
 }
 const usuarios = ref([])
+
 async function loadUsers() {
   usuarios.value = await getUsers()
   console.log("users settings: ", usuarios.value)
 }
 
-function goToKeycloak() {
-  window.open("http://localhost:8180/realms/ComercioElectronico/account", "_blank");
-}
+const showReset = ref(false);
+const newPassword = ref('');
+async function resetPassword() {
+  if (!newPassword.value) {
+    alert('Introduce una nueva contraseña');
+    return;
+  }
 
-function go(url) {
-  window.open(url, "_blank");
+  try {
+    await resetUserPassword(user.name, newPassword.value);
+    alert('Contraseña actualizada correctamente');
+    newPassword.value = '';
+    showReset.value = false;
+  } catch (error) {
+    alert('Error al actualizar la contraseña');
+  }
 }
-
 const totalAlumnos = computed(() =>
   usuarios.value.filter(u => u.email?.endsWith('@alumnos.upm.es')).length
 )
@@ -133,7 +160,7 @@ const totalAlumnos = computed(() =>
 const totalProfesores = computed(() =>
   usuarios.value.filter(u => !u.email?.endsWith('@alumnos.upm.es')).length
 )
-
+function go(url) { window.open(url, "_blank"); }
 const totalBuckets = computed(() => usuarios.value.length)
 
 const stats = ref({

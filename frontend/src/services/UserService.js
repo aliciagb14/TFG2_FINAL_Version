@@ -66,3 +66,17 @@ export async function updateUserKeycloak(user) {
         throw error;
     }
 }
+
+export async function resetUserPassword(userId, newPassword) {
+  try {
+    console.log("username: ", userId, "new pass: ", newPassword)
+    const response = await axios.post(
+      `http://localhost:3001/api/users/${userId}/reset-password`,
+      { newPassword }
+    );
+    return response.data;
+  } catch (error) {
+    console.error('Error al resetear la contraseña:', error.response?.data || error.message);
+    throw error;
+  }
+}

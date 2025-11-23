@@ -202,7 +202,7 @@ onMounted(async () => {
             lastName: user.lastName,
             email: user.email,
             id: user.id,
-            username: user.username,
+            username: user.username || user.id,
             rol: getRol(user),
             añoAcademico: getActualYear(),
             archivoSubido: false,
@@ -290,20 +290,6 @@ function downloadExcel() {
   exportNotasExcel(data.value)
 }
 
-function encontrarTiendaEnHtdocs(nombreArchivoSubido) {
-  const HTDOCS_DIR = 'C:\\xampp\\htdocs';
-  
-  const baseName = path.basename(nombreArchivoSubido, path.extname(nombreArchivoSubido)).toLowerCase();
-
-  const dirs = fs.readdirSync(HTDOCS_DIR, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => d.name.toLowerCase());
-
-  const tiendaExistente = dirs.find(d => d === baseName);
-
-  return tiendaExistente || null;
-}
-
 const fetchArchivoSubidoUsuarioActual = async (usuariosTransformados) => {
   const usuarioActual = usuariosTransformados.find(user => user.username === userStore.username);
   console.log("user actual es: ", usuarioActual)
@@ -343,38 +329,6 @@ const fetchArchivoSubidoUsuarioActual = async (usuariosTransformados) => {
   console.log("USer con archivos: ", usuariosConArchivos)
   return usuariosConArchivos;
 };
-
-
-// const fetchUploadedFilesPorUsuario = async (usuarios) => {
-//   const resultados = [];
-//   for (const user of usuarios) {
-//     const apellidos = user.lastName.replace(/\s+/g, '');
-//     const nombre = user.firstName.trim();
-//     const bucketName = normalizeBucketName(`${apellidos},${nombre}`);
-
-//     try {
-//       const res = await axios.get(`http://localhost:3000/bucket-files/${bucketName}`, {
-//         headers: {
-//           Authorization: `Bearer ${userStore.token}`
-//         }
-//       });
-//       console.log(`Archivos encontrados para ${bucketName}:`, res.data);
-
-//       if (Array.isArray(res.data) && res.data.length > 0) {
-//         user.archivoSubido = true;
-//       } else {
-//         user.archivoSubido = false;
-//       }
-//     } catch (error) {
-//       console.error(`Error al verificar archivos de ${user.username}:`, error);
-//       user.archivoSubido = false;
-//       resultados.push({ ...user, archivoSubido: [] }); 
-//     }
-//   }
-
-//   return usuarios;
-// };
-
 
 const columns = [
     {
@@ -582,7 +536,7 @@ const rowProps = (row) => {
 };
 
 const deleteSelectedUsers = () => {
-  const usersToDelete = data.value.filter(user => checkedRowKeysRef.value.includes(user.id));
+  const usersToDelete = data.value.filter(user => checkedRowKeysRef.value.includes(user.username));
   console.log("Usuarios seleccionados para eliminar:", usersToDelete);
   if (usersToDelete.length === 0) {
     console.warn("No hay usuarios seleccionados para eliminar.");
@@ -695,6 +649,19 @@ watch(showModal, (newVal) => {
 </script>
 
 <style scoped>
+
+.n-button {
+  border-radius: 8px;
+  padding: 4px 8px;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.n-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
 .table-header {
   display: flex;
   margin-bottom: 1rem;
@@ -714,9 +681,31 @@ watch(showModal, (newVal) => {
   align-items: center;
 }
 
-.data-table {
-  display: flex;
-  flex-direction: column;
+.data-table n-data-table {
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.data-table n-data-table .n-data-table-tbody tr {
+  transition: background-color 0.2s ease;
+}
+
+.data-table n-data-table .n-data-table-tbody tr:hover {
+  background-color: #f1f3f5;
+}
+
+.data-table n-data-table th,
+.data-table n-data-table td {
+  padding: 12px 16px;
+  text-align: left;
+  font-size: 0.95rem;
+  color: #333;
+}
+
+.data-table n-data-table th {
+  background-color: #e9ecef;
+  font-weight: 600;
 }
 
 .prestashop-style {
@@ -754,5 +743,9 @@ watch(showModal, (newVal) => {
   line-height: 1;
 }
 
+.n-input-number {
+  width: 60px;
+  text-align: center;
+}
 
 </style>
